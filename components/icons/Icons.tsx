@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export const DownloadIcon: React.FC = () => (
@@ -101,4 +100,35 @@ export const ChevronDownIcon: React.FC = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="-mr-1 ml-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
   </svg>
+);
+
+export const ChartBarIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V3zm2 12V8h2v7H5zm4 0V5h2v10H9zm4 0V9h2v6h-2z" clipRule="evenodd" />
+    </svg>
+);
+
+export const ServerIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm0 8a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zM6 6a1 1 0 100 2h1a1 1 0 100-2H6zm0 8a1 1 0 100 2h1a1 1 0 100-2H6z" clipRule="evenodd" />
+    </svg>
+);
+
+export const DocumentTextIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 1a1 1 0 000 2h8a1 1 0 100-2H6zM6 9a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h4a1 1 0 100-2H6z" clipRule="evenodd" />
+    </svg>
+);
+
+export const CpuChipIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M5 3a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V4a1 1 0 00-1-1H5zm0 2h10v10H5V5zm2 2a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1V8a1 1 0 00-1-1H7zm5 0a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1V8a1 1 0 00-1-1h-1zM7 12a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1v-1a1 1 0 00-1-1H7zm5 0a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1v-1a1 1 0 00-1-1h-1z" />
+        <path d="M1 5a1 1 0 011-1h1V3a1 1 0 112 0v1h8V3a1 1 0 112 0v1h1a1 1 0 011 1v1h1a1 1 0 110 2h-1v8h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1H5v1a1 1 0 11-2 0v-1H2a1 1 0 01-1-1v-1H0a1 1 0 110-2h1V6H0a1 1 0 010-2h1V5zm2 1v8h12V6H3z" />
+    </svg>
+);
+
+export const MicrochipIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M10 2a1 1 0 00-1 1v1H8a1 1 0 000 2h1v1H8a1 1 0 000 2h1v1H8a1 1 0 000 2h1v1H8a1 1 0 000 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1v-1h1a1 1 0 100-2h-1v-1h1a1 1 0 100-2h-1V7h1a1 1 0 100-2h-1V3a1 1 0 00-1-1zM6 3a1 1 0 011-1h1a1 1 0 110 2H7a1 1 0 01-1-1zm0 14a1 1 0 011-1h1a1 1 0 110 2H7a1 1 0 01-1-1zm8-14a1 1 0 00-1 1v1h1a1 1 0 100-2h-1zM5 7a1 1 0 011-1h1a1 1 0 110 2H6a1 1 0 01-1-1zm8 0a1 1 0 00-1 1v1h1a1 1 0 100-2h-1zm-1 3a1 1 0 100 2h1a1 1 0 100-2h-1zm1 3a1 1 0 011-1h1a1 1 0 110 2h-1a1 1 0 01-1-1zM6 11a1 1 0 011-1h1a1 1 0 110 2H7a1 1 0 01-1-1zm-1 3a1 1 0 100 2h1a1 1 0 100-2H5z" clipRule="evenodd" />
+    </svg>
 );

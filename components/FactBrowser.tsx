@@ -13,7 +13,8 @@ import ThemeSwitcher from './ThemeSwitcher';
 import ViewSwitcher, { ViewMode } from './ViewSwitcher';
 import FactFilter from './FactFilter';
 import { DENSITY_THEME } from '../styles/densityTheme';
-import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, FilterIcon, ExpandIcon, CompressIcon, ChevronDownIcon } from './icons/Icons';
+import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, FilterIcon, ExpandIcon, CompressIcon, ChevronDownIcon, ChartBarIcon } from './icons/Icons';
+import Dashboard from './Dashboard';
 
 type Theme = 'light' | 'dark';
 
@@ -125,6 +126,9 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [isFactFilterVisible, setIsFactFilterVisible] = useState(false);
   const [allFactPaths, setAllFactPaths] = useState<string[]>([]);
   const [visibleFactPaths, setVisibleFactPaths] = useState<Set<string>>(new Set());
+
+  // State for dashboard
+  const [isDashboardVisible, setIsDashboardVisible] = useState(false);
 
   // Fetch service status on initial load
   useEffect(() => {
@@ -623,6 +627,17 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                 </div>
                 <div className={`flex items-center flex-wrap justify-start sm:justify-end gap-2`}>
                   <Button
+                    onClick={() => setIsDashboardVisible(!isDashboardVisible)}
+                    variant="tertiary"
+                    shape="pill"
+                    density={density}
+                    className={`h-9 ${isDashboardVisible ? 'bg-violet-100 dark:bg-violet-900/50' : ''}`}
+                    title="Toggle dashboard"
+                    disabled={allFactPaths.length === 0}
+                  >
+                    <ChartBarIcon />
+                  </Button>
+                  <Button
                     onClick={() => setIsFactFilterVisible(!isFactFilterVisible)}
                     variant="tertiary"
                     shape="pill"
@@ -704,6 +719,10 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     style={{ transform: `scaleX(${scrollProgress / 100})`, transformOrigin: 'left' }}
                 />
               </div>
+            </div>
+
+            <div className="px-4 sm:px-6">
+                <Dashboard facts={filteredFacts} isVisible={isDashboardVisible} />
             </div>
             
             <FactFilter
