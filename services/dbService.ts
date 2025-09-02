@@ -29,11 +29,4 @@ export const dbService = {
       throw error;
     }
   },
-
-  testConnection: async (config: DbConfig): Promise<void> => {
-    // Możesz również zaimplementować endpoint /api/test-connection w backendzie
-    console.log('Simulating TEST connection to PostgreSQL via backend with config:', config);
-    // Na razie zostawiamy to jako symulację
-    return Promise.resolve();
-  },
 };

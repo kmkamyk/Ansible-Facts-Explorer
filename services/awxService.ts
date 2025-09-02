@@ -92,35 +92,4 @@ export const awxService = {
 
     return allHostFacts;
   },
-
-  /**
-   * Pings the AWX API to verify the URL and token are valid.
-   */
-  testConnection: async (baseUrl: string, token: string): Promise<void> => {
-    try {
-      const pingUrl = new URL('/api/v2/ping/', baseUrl).href;
-      const response = await fetch(pingUrl, { headers: getApiHeaders(token) });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Authentication failed. Please check your AWX Token.');
-        }
-        if (response.status === 404) {
-          throw new Error('Connection failed. Please check your AWX URL.');
-        }
-        throw new Error(`Connection failed: ${response.statusText} (${response.status})`);
-      }
-
-      const data = await response.json();
-      if (!data.instances || data.instances.length === 0) {
-        throw new Error('Could not find any active AWX instance nodes.');
-      }
-    } catch (error) {
-      if (error instanceof TypeError) { // Catches network errors like invalid URL format
-          throw new Error('Invalid AWX URL format or network error.');
-      }
-      // Re-throw custom errors from above
-      throw error;
-    }
-  },
 };

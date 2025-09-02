@@ -20,7 +20,6 @@ Ansible Facts Explorer is a powerful and intuitive web application designed to f
   - **Dark & Light Themes**: Switch between themes for comfortable viewing in any lighting condition.
   - **Density Control**: Adjust table density (Compact, Comfortable, Spacious) to match your preference and screen size.
 - **Responsive Design**: A clean, modern interface that works beautifully on desktops and tablets.
-- **Connection Testing**: The application can ping the AWX API to validate credentials and connectivity before fetching data.
 
 ## 🛠️ Tech Stack
 
