@@ -1,6 +1,8 @@
 import { AllHostFacts } from '../types';
 
-const API_BASE_URL = 'http://localhost:4000/api';
+// Use the same protocol as the frontend is served with. This allows for both HTTP and HTTPS deployments.
+const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+const API_BASE_URL = `${protocol}://localhost:4000/api`;
 
 interface ServiceStatus {
   awx: { configured: boolean };

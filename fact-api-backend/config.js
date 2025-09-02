@@ -15,7 +15,14 @@ const awxConfig = {
   token: process.env.AWX_TOKEN || 'YOUR_SECRET_AWX_TOKEN',
 };
 
+const sslConfig = {
+  keyPath: process.env.SSL_KEY_PATH || '',
+  certPath: process.env.SSL_CERT_PATH || '',
+  caPath: process.env.SSL_CA_PATH || '',
+};
+
 module.exports = {
   dbConfig,
   awxConfig,
+  sslConfig,
 };

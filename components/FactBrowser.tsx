@@ -129,7 +129,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
   // State for dashboard
   const [isDashboardVisible, setIsDashboardVisible] = useState(false);
-  const [chartFactSelections, setChartFactSelections] = useState<[string, string]>(['ansible_distribution', 'role']);
+  const [chartFactSelections, setChartFactSelections] = useState<string[]>(['ansible_distribution', 'role']);
 
 
   // Fetch service status on initial load
@@ -322,6 +322,22 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
       visibleFactPaths.has(fact.factPath) || fact.factPath === '---'
     );
   }, [searchedFacts, visibleFactPaths, allFactPaths]);
+
+  const dashboardFacts = useMemo(() => {
+    // When a search is active, the dashboard should reflect stats for the hosts that match the search.
+    // To do this, we get the unique hostnames from the search results...
+    const matchingHostnames = new Set(searchedFacts.map(fact => fact.host));
+
+    // ...and then pull *all* facts for those hosts from the original dataset.
+    // This ensures that stats like "Total vCPUs" are calculated correctly even if the user
+    // searched for a different fact (e.g., `role=webserver`).
+    if (searchTerm.trim()) {
+      return allFacts.filter(fact => matchingHostnames.has(fact.host));
+    }
+
+    // If no search is active, the dashboard should show stats for all hosts.
+    return allFacts;
+  }, [searchedFacts, allFacts, searchTerm]);
 
   const pivotViewFilteredFacts = useMemo(() => {
     const trimmedSearchTerm = searchTerm.trim();
@@ -725,7 +741,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
             <div className="px-4 sm:px-6">
                 <Dashboard
-                  facts={filteredFacts}
+                  facts={dashboardFacts}
                   isVisible={isDashboardVisible}
                   allFactPaths={allFactPaths}
                   chartFactSelections={chartFactSelections}

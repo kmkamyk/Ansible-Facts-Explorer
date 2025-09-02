@@ -64,6 +64,10 @@ Set these environment variables in the shell where you run the backend server.
     -   `DB_USER`: The PostgreSQL user to connect as.
     -   `DB_PASSWORD`: The password for the PostgreSQL user.
     -   `DB_NAME`: The name of the database to connect to (default: `awx_facts`).
+-   **For enabling HTTPS on the backend server:**
+    -   `SSL_CERT_PATH`: The file path to your SSL certificate (e.g., `fullchain.pem`).
+    -   `SSL_KEY_PATH`: The file path to your SSL private key (e.g., `privkey.pem`).
+    -   `SSL_CA_PATH` (optional): The file path to your Certificate Authority (CA) bundle.
 
 If environment variables for a specific source are not set or are invalid, selecting that source in the UI will result in an error.
 
@@ -75,7 +79,7 @@ The backend server handles the connection to your data sources.
 2.  Install dependencies: `npm install`
 3.  **Set the environment variables** as described above.
 4.  Start the backend server: `npm start`
-5.  The server will run on `http://localhost:4000`. The frontend is pre-configured to communicate with this address.
+5.  The server will run on `http://localhost:4000` or `https://localhost:4000` if SSL is configured. The frontend is pre-configured to communicate with this address.
 
 ### 3. Database Schema (for "Cached DB" source)
 
@@ -98,7 +102,7 @@ If you plan to use the PostgreSQL data source, your database needs a `facts` tab
 ### 4. How to Use the Application
 
 1.  **Start the Backend**: Make sure your backend server is running with the correct environment variables set.
-2.  **Open the Frontend**: Open the `index.html` file in your browser.
+2.  **Open the Frontend**: Open the `index.html` file in your browser. If you have enabled HTTPS on the backend, you will likely need to serve the frontend files from a webserver that also uses HTTPS to avoid mixed-content browser errors.
 3.  **Select a Data Source**: Use the toggle buttons in the header to choose between "Live AWX", "Cached DB", or "Demo".
 4.  **Load Facts**: Click the "Load Facts" button. The frontend will request data from the backend, which will then fetch it from the selected source.
 5.  **Explore the Dashboard**: Click the bar chart icon to toggle the dashboard view for a high-level overview. Configure the charts to visualize different fact distributions.

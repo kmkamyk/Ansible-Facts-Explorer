@@ -1,9 +1,11 @@
 // server.js
 
 const express = require('express');
+const https = require('https');
+const fs = require('fs');
 const { Pool } = require('pg');
 const cors = require('cors');
-const { dbConfig, awxConfig } = require('./config');
+const { dbConfig, awxConfig, sslConfig } = require('./config');
 
 const app = express();
 const port = 4000;
@@ -171,6 +173,28 @@ app.get('/api/facts', async (req, res) => {
 });
 
 // Start the server
-app.listen(port, () => {
-  console.log(`Backend server listening at http://localhost:${port}`);
-});
+if (sslConfig.keyPath && sslConfig.certPath) {
+    try {
+        const options = {
+            key: fs.readFileSync(sslConfig.keyPath),
+            cert: fs.readFileSync(sslConfig.certPath),
+        };
+        // Add CA bundle if provided
+        if (sslConfig.caPath) {
+            options.ca = fs.readFileSync(sslConfig.caPath);
+        }
+        https.createServer(options, app).listen(port, () => {
+            console.log(`Backend server listening securely at https://localhost:${port}`);
+        });
+    } catch (err) {
+        console.error("Error setting up HTTPS server. Please check your SSL configuration and file paths.", err);
+        console.log("Falling back to HTTP.");
+        app.listen(port, () => {
+            console.log(`Backend server listening at http://localhost:${port}`);
+        });
+    }
+} else {
+    app.listen(port, () => {
+        console.log(`Backend server listening at http://localhost:${port}`);
+    });
+}

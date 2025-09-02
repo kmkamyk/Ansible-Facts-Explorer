@@ -1,17 +1,18 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { FactRow } from '../types';
-import { ServerIcon, DocumentTextIcon, CpuChipIcon, MicrochipIcon, CogIcon } from './icons/Icons';
+import { ServerIcon, DocumentTextIcon, CpuChipIcon, MicrochipIcon, CogIcon, XSmallIcon, PlusIcon } from './icons/Icons';
+import Button from './Button';
 
 interface DashboardProps {
   facts: FactRow[];
   isVisible: boolean;
   allFactPaths: string[];
-  chartFactSelections: [string, string];
-  onChartFactSelectionChange: (newSelection: [string, string]) => void;
+  chartFactSelections: string[];
+  onChartFactSelectionChange: (newSelections: string[]) => void;
 }
 
 const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number; color: string; }> = ({ icon, title, value, color }) => (
-    <div className="bg-slate-100 dark:bg-zinc-800/70 p-4 rounded-lg shadow-sm flex items-center gap-4 ring-1 ring-slate-200 dark:ring-zinc-700/80">
+    <div className="bg-slate-100 dark:bg-zinc-800/70 p-4 rounded-lg shadow-sm flex items-center gap-4 border border-slate-200 dark:border-zinc-700/80">
         <div className={`p-3 rounded-full ${color}`}>
             {icon}
         </div>
@@ -29,7 +30,8 @@ const BarChart: React.FC<{
     allFactPaths: string[];
     selectedFact: string;
     onFactChange: (newFact: string) => void;
-}> = ({ title, data, color, allFactPaths, selectedFact, onFactChange }) => {
+    onRemove: () => void;
+}> = ({ title, data, color, allFactPaths, selectedFact, onFactChange, onRemove }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [filter, setFilter] = useState('');
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -60,7 +62,7 @@ const BarChart: React.FC<{
     }, [allFactPaths, filter]);
 
     return (
-        <div className="bg-slate-100 dark:bg-zinc-800/70 p-4 rounded-lg shadow-sm col-span-1 md:col-span-2 ring-1 ring-slate-200 dark:ring-zinc-700/80">
+        <div className="bg-slate-100 dark:bg-zinc-800/70 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-zinc-700/80">
             <div className="flex justify-between items-center mb-3 h-8" ref={wrapperRef}>
                 {isEditing ? (
                     <div className="relative w-full">
@@ -91,9 +93,14 @@ const BarChart: React.FC<{
                     </h3>
                 )}
                 {!isEditing && (
-                    <button onClick={() => setIsEditing(true)} className="text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors flex-shrink-0" title="Configure chart">
-                        <CogIcon />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setIsEditing(true)} className="text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors flex-shrink-0" title="Configure chart">
+                            <CogIcon />
+                        </button>
+                         <button onClick={onRemove} className="text-slate-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-400 transition-colors flex-shrink-0" title="Remove chart">
+                            <XSmallIcon />
+                        </button>
+                    </div>
                 )}
             </div>
             {data.length > 0 ? (
@@ -123,14 +130,13 @@ const BarChart: React.FC<{
 
 
 const Dashboard: React.FC<DashboardProps> = ({ facts, isVisible, allFactPaths, chartFactSelections, onChartFactSelectionChange }) => {
-    const { stats, chartablePaths } = useMemo(() => {
+    // FIX: Destructure chartDistributions along with stats and chartablePaths.
+    const { stats, chartablePaths, chartDistributions } = useMemo(() => {
         if (facts.length === 0) {
             return {
-                stats: {
-                    hostCount: 0, factCount: 0, totalVcpus: 0, totalMemoryGb: '0.00',
-                    chart1Distribution: [], chart2Distribution: [],
-                },
+                stats: { hostCount: 0, factCount: 0, totalVcpus: 0, totalMemoryGb: '0.00' },
                 chartablePaths: [],
+                chartDistributions: [],
             };
         }
 
@@ -163,8 +169,7 @@ const Dashboard: React.FC<DashboardProps> = ({ facts, isVisible, allFactPaths, c
                 .slice(0, 5); // Top 5
         };
 
-        const chart1Distribution = getDistribution(chartFactSelections[0]);
-        const chart2Distribution = getDistribution(chartFactSelections[1]);
+        const chartDistributions = chartFactSelections.map(factName => getDistribution(factName));
 
         // Heuristic to find good candidates for charting: non-unique, non-numeric strings.
         const potentialChartablePaths = allFactPaths.filter(path => {
@@ -179,15 +184,16 @@ const Dashboard: React.FC<DashboardProps> = ({ facts, isVisible, allFactPaths, c
                 factCount: facts.length,
                 totalVcpus: totalVcpus,
                 totalMemoryGb: (totalMemoryMb / 1024).toFixed(2),
-                chart1Distribution,
-                chart2Distribution,
             },
             chartablePaths: potentialChartablePaths.length > 0 ? potentialChartablePaths : allFactPaths,
+            chartDistributions,
         };
     }, [facts, allFactPaths, chartFactSelections]);
 
+    const chartColors = ['bg-violet-500', 'bg-fuchsia-500', 'bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'];
+
     return (
-        <div className={`transition-[max-height,padding,opacity] duration-500 ease-in-out overflow-hidden ${isVisible ? 'max-h-[1000px] py-4 opacity-100' : 'max-h-0 py-0 opacity-0'}`}>
+        <div className={`transition-[max-height,padding,opacity] duration-500 ease-in-out overflow-y-auto ${isVisible ? 'max-h-[70vh] py-4 opacity-100' : 'max-h-0 py-0 opacity-0'}`}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <StatCard icon={<ServerIcon />} title="Hosts" value={stats.hostCount.toLocaleString()} color="bg-sky-500 text-white" />
                 <StatCard icon={<DocumentTextIcon />} title="Facts" value={stats.factCount.toLocaleString()} color="bg-emerald-500 text-white" />
@@ -195,23 +201,38 @@ const Dashboard: React.FC<DashboardProps> = ({ facts, isVisible, allFactPaths, c
                 <StatCard icon={<MicrochipIcon />} title="Total Memory (GB)" value={stats.totalMemoryGb} color="bg-rose-500 text-white" />
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <BarChart 
-                    title={`Distribution of "${chartFactSelections[0] || 'Not Selected'}"`}
-                    data={stats.chart1Distribution}
-                    color="bg-violet-500"
-                    allFactPaths={chartablePaths}
-                    selectedFact={chartFactSelections[0]}
-                    onFactChange={(newFact) => onChartFactSelectionChange([newFact, chartFactSelections[1]])}
-                />
-                 <BarChart 
-                    title={`Distribution of "${chartFactSelections[1] || 'Not Selected'}"`}
-                    data={stats.chart2Distribution}
-                    color="bg-fuchsia-500"
-                    allFactPaths={chartablePaths}
-                    selectedFact={chartFactSelections[1]}
-                    onFactChange={(newFact) => onChartFactSelectionChange([chartFactSelections[0], newFact])}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {chartFactSelections.map((selection, index) => (
+                    <BarChart
+                        key={index}
+                        title={`Distribution of "${selection || 'Not Selected'}"`}
+                        // FIX: Access chartDistributions directly, not as a property of stats.
+                        data={chartDistributions[index] || []}
+                        color={chartColors[index % chartColors.length]}
+                        allFactPaths={chartablePaths}
+                        selectedFact={selection}
+                        onFactChange={(newFact) => {
+                            const newSelections = [...chartFactSelections];
+                            newSelections[index] = newFact;
+                            onChartFactSelectionChange(newSelections);
+                        }}
+                        onRemove={() => {
+                           onChartFactSelectionChange(chartFactSelections.filter((_, i) => i !== index));
+                        }}
+                    />
+                ))}
+            </div>
+             <div className="mt-4 flex justify-center">
+                <Button 
+                    onClick={() => onChartFactSelectionChange([...chartFactSelections, chartablePaths[0] || ''])}
+                    variant="secondary" 
+                    shape="pill"
+                    density="comfortable"
+                    disabled={chartablePaths.length === 0}
+                >
+                    <PlusIcon />
+                    Add Chart
+                </Button>
             </div>
         </div>
     );
