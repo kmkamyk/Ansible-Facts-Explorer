@@ -733,7 +733,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
       </main>
 
       {!isFullScreen && (
-        <footer className="w-full text-xs text-slate-500 dark:text-zinc-500 py-1 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end">
+        <footer className="w-full text-xs text-slate-500 dark:text-zinc-500 py-1 flex items-center justify-end">
             <div className="flex items-center gap-x-4">
                 <span className="font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
                     KMK
