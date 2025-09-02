@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { awxService } from '../services/awxService';
-import { dbService } from '../services/dbService';
+import { apiService } from '../services/apiService';
 import { demoService } from '../services/demoService';
-import { AllHostFacts, FactRow, DbConfig, Density, SortConfig, SortDirection, SortableKey } from '../types';
+import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey } from '../types';
 import SearchBar from './SearchBar';
 import FactTable from './FactTable';
 import PivotedFactTable from './PivotedFactTable';
@@ -19,13 +18,7 @@ import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, FilterIcon, ExpandIcon, C
 
 type Theme = 'light' | 'dark';
 
-interface FactBrowserProps {
-  awxConfig: {
-    url: string;
-    token: string;
-  };
-  dbConfig: DbConfig;
-}
+interface FactBrowserProps {}
 
 const flattenFactsForTable = (allHostFacts: AllHostFacts): FactRow[] => {
     const rows: FactRow[] = [];
@@ -98,13 +91,12 @@ const pivotFactsForExport = (facts: FactRow[]): { data: Record<string, any>[]; h
 };
 
 
-const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
+const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isRegexValid, setIsRegexValid] = useState(true);
-  const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [showModifiedColumn, setShowModifiedColumn] = useState(false);
   
   const [dataSource, setDataSource] = useState<'awx' | 'db' | 'demo'>('demo');
@@ -161,24 +153,10 @@ const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
     setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
   };
 
-  const isAwxConfigured = awxConfig.url !== 'https://awx.example.com' && awxConfig.token !== 'YOUR_SECRET_AWX_TOKEN';
-  const isDbConfigured = dbConfig.user !== 'YOUR_MACOS_USERNAME';
-  
-  useEffect(() => {
-    if (isAwxConfigured) {
-      setDataSource('awx');
-    } else if (isDbConfigured) {
-      setDataSource('db');
-    } else {
-      setDataSource('demo');
-    }
-  }, [isAwxConfigured, isDbConfigured]);
-
   const handleLoadFacts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setAllFacts([]);
-    setProgress({ loaded: 0, total: 0 });
     setFactsLoaded(true);
     setIsFactFilterVisible(false);
     setScrollProgress(0);
@@ -187,11 +165,9 @@ const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
         let data: AllHostFacts;
         const sourceToLoad = dataSource;
         if (sourceToLoad === 'awx') {
-            if (!isAwxConfigured) throw new Error("AWX is not configured. Please check config.ts");
-            data = await awxService.fetchFacts(awxConfig.url, awxConfig.token, setProgress);
+            data = await apiService.fetchFacts('awx');
         } else if (sourceToLoad === 'db') {
-            if (!isDbConfigured) throw new Error("Database is not configured. Please check config.ts");
-            data = await dbService.fetchFacts(dbConfig);
+            data = await apiService.fetchFacts('db');
         } else {
             data = await demoService.fetchFacts();
         }
@@ -209,7 +185,7 @@ const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
     } finally {
         setIsLoading(false);
     }
-  }, [awxConfig, dbConfig, dataSource, isAwxConfigured, isDbConfigured]);
+  }, [dataSource]);
 
   const searchedFacts = useMemo(() => {
     const trimmedSearchTerm = searchTerm.trim();
@@ -521,7 +497,7 @@ const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
                             <button
                               type="button"
                               onClick={() => setDataSource('awx')}
-                              disabled={!isAwxConfigured || isLoading}
+                              disabled={isLoading}
                               className={`px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${dataSource === 'awx' ? 'bg-slate-100 dark:bg-zinc-900 shadow text-violet-600 dark:text-violet-400 font-semibold' : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                               Live AWX
@@ -529,7 +505,7 @@ const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
                              <button
                               type="button"
                               onClick={() => setDataSource('db')}
-                              disabled={!isDbConfigured || isLoading}
+                              disabled={isLoading}
                               className={`px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${dataSource === 'db' ? 'bg-slate-100 dark:bg-zinc-900 shadow text-violet-600 dark:text-violet-400 font-semibold' : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                               Cached DB
@@ -568,11 +544,6 @@ const FactBrowser: React.FC<FactBrowserProps> = ({ awxConfig, dbConfig }) => {
             <p className="mt-4 text-lg text-slate-600 dark:text-zinc-300">
               {dataSource === 'awx' ? 'Fetching facts from AWX...' : dataSource === 'db' ? 'Fetching facts from Database...' : 'Loading demo data...'}
             </p>
-             {progress.total > 0 && dataSource === 'awx' && (
-              <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">
-                Loaded {progress.loaded.toLocaleString()} of {progress.total.toLocaleString()} hosts.
-              </p>
-            )}
           </div>
         ) : error ? (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300 px-4 py-3 rounded-2xl">

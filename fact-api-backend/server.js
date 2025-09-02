@@ -1,3 +1,4 @@
+
 // server.js
 
 const express = require('express');
@@ -5,56 +6,138 @@ const { Pool } = require('pg');
 const cors = require('cors');
 
 const app = express();
-const port = 4000; // Port, na którym będzie działał nasz backend
+const port = 4000;
 
-// Pozwól na zapytania z Twojej aplikacji frontendowej
+// Allow requests from your frontend application
 app.use(cors());
 
-// Konfiguracja bazy danych z priorytetem dla zmiennych środowiskowych.
-// W prawdziwej aplikacji te dane ZAWSZE powinny być w zmiennych środowiskowych!
+// --- Centralized Configuration ---
+// All sensitive configuration is now handled by the backend, loaded from environment variables.
+
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
-  user: process.env.DB_USER || 'YOUR_MACOS_USERNAME', // ZASTĄP lub ustaw DB_USER
-  password: process.env.DB_PASSWORD || '', // Ustaw DB_PASSWORD, jeśli masz hasło
+  user: process.env.DB_USER || 'YOUR_MACOS_USERNAME', // REPLACE or set DB_USER
+  password: process.env.DB_PASSWORD || '', // Set DB_PASSWORD if you have one
   database: process.env.DB_NAME || 'awx_facts',
 };
 
+const awxConfig = {
+  url: process.env.AWX_URL || 'https://awx.example.com',
+  token: process.env.AWX_TOKEN || 'YOUR_SECRET_AWX_TOKEN',
+};
 
-// Pula połączeń do bazy danych
+// Database connection pool
 const pool = new Pool(dbConfig);
 
-// Endpoint API, który będzie wywoływany przez frontend
-// Kiedy frontend wyśle zapytanie na http://localhost:4000/api/facts, ta funkcja się uruchomi
-app.get('/api/facts', async (req, res) => {
-  try {
-    console.log('Otrzymano zapytanie o fakty z bazy danych...');
-    
-    // ZMIANA: Wybieramy również kolumnę `modified_at`
-    const result = await pool.query('SELECT hostname, data, modified_at FROM facts'); 
-    
-    // Baza danych zwraca tablicę wierszy. Musimy przekształcić ją do formatu,
-    // którego oczekuje Twój frontend: { "nazwa_hosta": { ...fakty } }
-    const allHostFacts = {};
-    for (const row of result.rows) {
-        // Dołącz znacznik czasu modyfikacji do obiektu faktów pod specjalnym kluczem,
-        // jeśli istnieje. Frontend oczekuje tego formatu.
-        if (row.data && row.modified_at) {
-            row.data.__awx_facts_modified_timestamp = row.modified_at.toISOString();
-        }
-        allHostFacts[row.hostname] = row.data || {};
-    }
+// --- AWX Data Fetching Logic (moved from frontend) ---
+const fetchFactsFromAwx = async () => {
+  if (!awxConfig.url || !awxConfig.token || awxConfig.url === 'https://awx.example.com') {
+    throw new Error('AWX is not configured on the backend. Please set AWX_URL and AWX_TOKEN environment variables.');
+  }
 
-    console.log(`Pobrano dane dla ${Object.keys(allHostFacts).length} hostów.`);
-    res.json(allHostFacts); // Wyślij dane jako odpowiedź JSON
+  const headers = {
+    'Authorization': `Bearer ${awxConfig.token}`,
+    'Content-Type': 'application/json',
+  };
+
+  const allHosts = [];
+  let currentUrl = new URL('/api/v2/hosts/?page_size=100', awxConfig.url).href;
+
+  console.log('Starting to fetch hosts from AWX...');
+  while (currentUrl) {
+    const response = await fetch(currentUrl, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch hosts list: ${response.statusText} (${response.status})`);
+    }
+    const data = await response.json();
+    allHosts.push(...data.results);
+    currentUrl = data.next ? new URL(data.next, awxConfig.url).href : null;
+  }
+  console.log(`Found ${allHosts.length} hosts. Fetching facts for each...`);
+
+  const allHostFacts = {};
+  const concurrencyLimit = 100;
+  const queue = [...allHosts];
+  const hostMap = new Map(allHosts.map(h => [h.name, h]));
+
+  const processQueue = async () => {
+    while (queue.length > 0) {
+      const host = queue.shift();
+      if (!host) continue;
+      
+      const hostWithMeta = hostMap.get(host.name);
+
+      try {
+        const factsUrl = new URL(host.related.ansible_facts, awxConfig.url).href;
+        const factsResponse = await fetch(factsUrl, { headers });
+        
+        if (factsResponse.status === 404) {
+          allHostFacts[host.name] = {};
+        } else if (!factsResponse.ok) {
+          console.error(`Failed to fetch facts for ${host.name}: ${factsResponse.statusText}`);
+          allHostFacts[host.name] = { error: `Failed to fetch facts (${factsResponse.statusText})` };
+        } else {
+          const facts = await factsResponse.json();
+          if (hostWithMeta?.ansible_facts_modified) {
+              facts.__awx_facts_modified_timestamp = hostWithMeta.ansible_facts_modified;
+          }
+          allHostFacts[host.name] = facts;
+        }
+      } catch (error) {
+        console.error(`Error processing facts for ${host.name}:`, error);
+        allHostFacts[host.name] = { error: 'Network or parsing error while fetching facts.' };
+      }
+    }
+  };
+
+  const workers = Array(concurrencyLimit).fill(null).map(() => processQueue());
+  await Promise.all(workers);
+
+  console.log('Finished fetching all facts from AWX.');
+  return allHostFacts;
+};
+
+
+// --- Unified API Endpoint ---
+// The frontend calls this endpoint with ?source=db or ?source=awx
+app.get('/api/facts', async (req, res) => {
+  const { source } = req.query;
+
+  try {
+    let data;
+    if (source === 'db') {
+      console.log('Received request for facts from database...');
+      const result = await pool.query('SELECT hostname, data, modified_at FROM facts');
+      
+      const allHostFacts = {};
+      for (const row of result.rows) {
+          if (row.data && row.modified_at) {
+              row.data.__awx_facts_modified_timestamp = row.modified_at.toISOString();
+          }
+          allHostFacts[row.hostname] = row.data || {};
+      }
+      data = allHostFacts;
+      console.log(`Fetched data for ${Object.keys(data).length} hosts from DB.`);
+
+    } else if (source === 'awx') {
+      console.log('Received request for facts from AWX...');
+      data = await fetchFactsFromAwx();
+      console.log(`Fetched data for ${Object.keys(data).length} hosts from AWX.`);
+
+    } else {
+      return res.status(400).json({ error: 'Invalid or missing "source" query parameter. Use "db" or "awx".' });
+    }
+    
+    res.json(data);
 
   } catch (err) {
-    console.error('Błąd podczas pobierania danych z bazy:', err);
-    res.status(500).json({ error: 'Nie udało się pobrać danych z bazy.' });
+    console.error(`Error during data fetch for source "${source}":`, err);
+    res.status(500).json({ error: err.message || 'Failed to fetch data from the specified source.' });
   }
 });
 
-// Uruchom serwer
+// Start the server
 app.listen(port, () => {
-  console.log(`Serwer backendowy nasłuchuje na http://localhost:${port}`);
+  console.log(`Backend server listening at http://localhost:${port}`);
 });
