@@ -124,10 +124,27 @@ app.get('/api/facts', async (req, res) => {
     let data;
     if (source === 'db') {
       console.log('Received request for facts from database...');
-      const result = await pool.query('SELECT hostname, data, modified_at FROM facts');
+      let result;
+      try {
+        // First, try to fetch with the modified_at column
+        result = await pool.query('SELECT hostname, data, modified_at FROM facts');
+      } catch (err) {
+        // Check if the error is because the column doesn't exist
+        // PostgreSQL error code for "undefined column" is 42703
+        if (err.code === '42703' && err.message.includes('"modified_at"')) {
+          console.warn('Column "modified_at" not found in "facts" table. Fetching data without it.');
+          // If it does not exist, fetch without it
+          result = await pool.query('SELECT hostname, data FROM facts');
+        } else {
+          // For any other error, re-throw it to be handled by the main catch block
+          throw err;
+        }
+      }
       
       const allHostFacts = {};
       for (const row of result.rows) {
+          // The `row.modified_at` will exist or be undefined based on the successful query.
+          // This check correctly handles both cases.
           if (row.data && row.modified_at) {
               row.data.__awx_facts_modified_timestamp = row.modified_at.toISOString();
           }
