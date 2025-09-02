@@ -1,4 +1,3 @@
-
 // server.js
 
 const express = require('express');
@@ -30,9 +29,26 @@ const awxConfig = {
 // Database connection pool
 const pool = new Pool(dbConfig);
 
+
+// --- Status Check Logic ---
+const isAwxConfigured = () => {
+    return !!awxConfig.url && !!awxConfig.token && awxConfig.url !== 'https://awx.example.com' && awxConfig.token !== 'YOUR_SECRET_AWX_TOKEN';
+};
+
+const checkDbConnection = async () => {
+    try {
+        const client = await pool.connect();
+        client.release();
+        return { configured: true };
+    } catch (error) {
+        console.error("Database connection check failed:", error.message);
+        return { configured: false, error: error.message };
+    }
+};
+
 // --- AWX Data Fetching Logic (moved from frontend) ---
 const fetchFactsFromAwx = async () => {
-  if (!awxConfig.url || !awxConfig.token || awxConfig.url === 'https://awx.example.com') {
+  if (!isAwxConfigured()) {
     throw new Error('AWX is not configured on the backend. Please set AWX_URL and AWX_TOKEN environment variables.');
   }
 
@@ -98,6 +114,21 @@ const fetchFactsFromAwx = async () => {
   return allHostFacts;
 };
 
+// --- New Service Status Endpoint ---
+app.get('/api/status', async (req, res) => {
+    console.log('Received request for service status...');
+    const dbStatus = await checkDbConnection();
+    const status = {
+        awx: {
+            configured: isAwxConfigured(),
+        },
+        db: {
+            configured: dbStatus.configured,
+        }
+    };
+    console.log('Service status:', status);
+    res.json(status);
+});
 
 // --- Unified API Endpoint ---
 // The frontend calls this endpoint with ?source=db or ?source=awx

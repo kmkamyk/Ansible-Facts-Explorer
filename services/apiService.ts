@@ -1,7 +1,11 @@
-
 import { AllHostFacts } from '../types';
 
 const API_BASE_URL = 'http://localhost:4000/api';
+
+interface ServiceStatus {
+  awx: { configured: boolean };
+  db: { configured: boolean };
+}
 
 export const apiService = {
   fetchFacts: async (source: 'awx' | 'db'): Promise<AllHostFacts> => {
@@ -28,4 +32,22 @@ export const apiService = {
       throw error; // Re-throw other errors (like the custom one from the response)
     }
   },
+
+  fetchStatus: async (): Promise<ServiceStatus> => {
+    const statusUrl = `${API_BASE_URL}/status`;
+    console.log('Fetching service status from backend...');
+    try {
+      const response = await fetch(statusUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch status from API: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching service status:', error);
+      if (error instanceof TypeError) {
+        throw new Error('Could not connect to the backend API to check status. Is the server running?');
+      }
+      throw error;
+    }
+  }
 };

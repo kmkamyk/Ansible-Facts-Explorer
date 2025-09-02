@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
@@ -17,6 +16,11 @@ import { DENSITY_THEME } from '../styles/densityTheme';
 import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, FilterIcon, ExpandIcon, CompressIcon, ChevronDownIcon } from './icons/Icons';
 
 type Theme = 'light' | 'dark';
+
+interface ServiceStatus {
+  awx: { configured: boolean };
+  db: { configured: boolean };
+}
 
 interface FactBrowserProps {}
 
@@ -113,10 +117,37 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
 
+  // State for backend service availability
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ awx: { configured: true }, db: { configured: true }});
+  const [isStatusLoading, setIsStatusLoading] = useState(true);
+
   // State for fact filtering
   const [isFactFilterVisible, setIsFactFilterVisible] = useState(false);
   const [allFactPaths, setAllFactPaths] = useState<string[]>([]);
   const [visibleFactPaths, setVisibleFactPaths] = useState<Set<string>>(new Set());
+
+  // Fetch service status on initial load
+  useEffect(() => {
+    const checkServiceStatus = async () => {
+      try {
+        const status = await apiService.fetchStatus();
+        setServiceStatus(status);
+        // If current source is now unavailable, fallback to demo
+        if ((dataSource === 'awx' && !status.awx.configured) || (dataSource === 'db' && !status.db.configured)) {
+          setDataSource('demo');
+        }
+      } catch (e: any) {
+        console.error("Failed to fetch service status:", e.message);
+        // Assume services are unavailable on error
+        setServiceStatus({ awx: { configured: false }, db: { configured: false }});
+        setDataSource('demo');
+      } finally {
+        setIsStatusLoading(false);
+      }
+    };
+    checkServiceStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount
 
   useEffect(() => {
     if (viewMode === 'list') {
@@ -497,7 +528,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                             <button
                               type="button"
                               onClick={() => setDataSource('awx')}
-                              disabled={isLoading}
+                              disabled={isLoading || isStatusLoading || !serviceStatus.awx.configured}
+                              title={!serviceStatus.awx.configured ? "AWX source is not configured on the backend" : "Fetch from Live AWX"}
                               className={`px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${dataSource === 'awx' ? 'bg-slate-100 dark:bg-zinc-900 shadow text-violet-600 dark:text-violet-400 font-semibold' : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                               Live AWX
@@ -505,7 +537,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                              <button
                               type="button"
                               onClick={() => setDataSource('db')}
-                              disabled={isLoading}
+                              disabled={isLoading || isStatusLoading || !serviceStatus.db.configured}
+                              title={!serviceStatus.db.configured ? "Database source is not configured on the backend" : "Fetch from Cached DB"}
                               className={`px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${dataSource === 'db' ? 'bg-slate-100 dark:bg-zinc-900 shadow text-violet-600 dark:text-violet-400 font-semibold' : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                               Cached DB
@@ -528,7 +561,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     </div>
                     <DensitySwitcher density={density} onDensityChange={setDensity} className="h-9" />
                     <ThemeSwitcher theme={theme} onToggleTheme={toggleTheme} className="h-9 w-9" />
-                    <Button onClick={handleLoadFacts} disabled={isLoading} density={density} variant="tertiary" shape="pill" className="h-9">
+                    <Button onClick={handleLoadFacts} disabled={isLoading || isStatusLoading} density={density} variant="tertiary" shape="pill" className="h-9">
                         {isLoading ? <Spinner className="w-5 h-5"/> : <PlayIcon />}
                         {isLoading ? 'Loading...' : (factsLoaded ? 'Reload' : 'Load Facts')}
                     </Button>
@@ -538,11 +571,11 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
       )}
 
       <main className="flex-1 min-h-0 flex flex-col">
-        {isLoading ? (
+        {isLoading || isStatusLoading ? (
           <div className="flex flex-col items-center justify-center h-full bg-gradient-to-br from-white to-slate-50 dark:bg-gradient-to-br dark:from-zinc-900 dark:to-zinc-950 rounded-2xl shadow-lg">
             <Spinner />
             <p className="mt-4 text-lg text-slate-600 dark:text-zinc-300">
-              {dataSource === 'awx' ? 'Fetching facts from AWX...' : dataSource === 'db' ? 'Fetching facts from Database...' : 'Loading demo data...'}
+              {isStatusLoading ? 'Checking backend status...' : (dataSource === 'awx' ? 'Fetching facts from AWX...' : dataSource === 'db' ? 'Fetching facts from Database...' : 'Loading demo data...')}
             </p>
           </div>
         ) : error ? (
