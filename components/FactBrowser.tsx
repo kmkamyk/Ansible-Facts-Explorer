@@ -401,10 +401,29 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
   const dataForExport = useMemo(() => {
     if (viewMode === 'list') {
-      return pivotFactsForExport(sortedListFacts);
+        const headers = ['host', 'factPath', 'value'];
+        if (showModifiedColumn) {
+            headers.push('modified');
+        }
+        
+        const data = sortedListFacts.map(fact => {
+            const row: Record<string, any> = {
+                host: fact.host,
+                factPath: fact.factPath,
+                value: fact.value,
+            };
+            if (showModifiedColumn) {
+                row.modified = fact.modified;
+            }
+            return row;
+        });
+
+        return { data, headers };
     }
+    
+    // For pivot view, the data is already in the correct shape { data, headers }
     return sortedPivotedData;
-  }, [viewMode, sortedListFacts, sortedPivotedData]);
+  }, [viewMode, sortedListFacts, sortedPivotedData, showModifiedColumn]);
 
   useEffect(() => {
     const isSpecialQuery = searchTerm.trim().match(/^(.*?)\s*(!=|>=|<=|>|<|=)\s*(.*)$/) || (searchTerm.startsWith('"') && searchTerm.endsWith('"'));
