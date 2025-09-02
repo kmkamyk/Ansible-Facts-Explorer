@@ -8,19 +8,28 @@ Ansible Facts Explorer is a powerful and intuitive web application designed to f
 ## ✨ Key Features
 
 - **Multiple Data Sources**: Seamlessly switch between fetching data from a live AWX API, a pre-populated PostgreSQL database, or built-in demo data.
-- **Secure Backend-Driven Configuration**: All sensitive configuration (API tokens, DB credentials) is handled securely by the backend server, configured via environment variables. The frontend contains no secrets.
+- **Interactive Dashboard**: Get a high-level overview of your infrastructure with a dynamic dashboard, including:
+  - Key metric cards (total hosts, facts, vCPUs, memory).
+  - Two configurable bar charts to visualize the distribution of any fact (e.g., OS distribution, application versions).
+- **Dual Table Views**:
+    - **List View**: A traditional, flat list of all facts, ideal for searching and sorting across all hosts.
+    - **Pivot View**: A host-centric view where each row is a host and facts are columns, perfect for comparing specific configurations between machines.
 - **Advanced Search & Filtering**: A single search bar supports:
   - **Plain text search**: Instantly filters across hostnames, fact paths, and values.
   - **Regular Expressions**: For complex pattern matching.
   - **Key-Value Filtering**: Use operators (`=`, `!=`, `>`, `<`, `>=`, `<=`) for precise queries (e.g., `ansible_processor_vcpus > 4`, `ansible_distribution = Ubuntu`).
-  - **Exact Match**: Wrap your query in double quotes for exact matching.
-- **Performant Virtualized Table**: Renders thousands of fact rows smoothly using windowing (virtual scrolling), ensuring the UI remains responsive even with massive datasets.
-- **Data Timestamps**: An optional "Modified" column shows when facts were last updated for a given host, available for all data sources.
-- **Data Export**: Export filtered data into **CSV** or **XLSX** (Excel) formats with a single click. The data is intelligently pivoted, with hosts as rows and fact paths as columns.
+  - **Exact Match**: Wrap your query in double quotes for an exact match.
+- **Dynamic Column Management**:
+    - **Fact Filter Panel**: Easily show or hide hundreds of fact paths from the tables to focus on what matters.
+    - **In-Table Column Removal**: In Pivot View, remove columns directly from the header for quick analysis.
+    - **Toggle Timestamps**: Show or hide the "Modified" column to see when facts were last updated.
+- **Performant Virtualized Tables**: Renders thousands of rows smoothly in both List and Pivot views using windowing (virtual scrolling), ensuring the UI remains responsive even with massive datasets.
+- **Data Export**: Export your filtered data from either view into **CSV** or **XLSX** (Excel) formats. The export format intelligently adapts to the current view.
 - **Customizable UI**:
-  - **Dark & Light Themes**: Switch between themes for comfortable viewing in any lighting condition.
-  - **Density Control**: Adjust table density (Compact, Comfortable, Spacious) to match your preference and screen size.
-- **Responsive Design**: A clean, modern interface that works beautifully on desktops and tablets.
+  - **Dark & Light Themes**: For comfortable viewing in any lighting.
+  - **Density Control**: Adjust table density (Compact, Comfortable, Spacious).
+  - **Full Screen Mode**: Expand the browser to fill the screen for maximum focus.
+- **Secure Backend-Driven Configuration**: All sensitive configuration (API tokens, DB credentials) is handled securely by the backend server, configured via environment variables.
 
 ## 🛠️ Tech Stack
 
@@ -92,10 +101,13 @@ If you plan to use the PostgreSQL data source, your database needs a `facts` tab
 2.  **Open the Frontend**: Open the `index.html` file in your browser.
 3.  **Select a Data Source**: Use the toggle buttons in the header to choose between "Live AWX", "Cached DB", or "Demo".
 4.  **Load Facts**: Click the "Load Facts" button. The frontend will request data from the backend, which will then fetch it from the selected source.
-5.  **Search and Filter**: Use the search bar to explore the data. As you type, the table will update instantly.
-6.  **Toggle Modified Date**: Click the clock icon to show or hide the "Modified" column.
-7.  **Export Data**: Click the export button to download the currently filtered data as CSV or XLSX.
-8.  **Customize View**: Use the density and theme switchers to adjust the application's appearance.
+5.  **Explore the Dashboard**: Click the bar chart icon to toggle the dashboard view for a high-level overview. Configure the charts to visualize different fact distributions.
+6.  **Switch Views**: Use the view switcher to toggle between the flat **List View** and the host-centric **Pivot View**.
+7.  **Search and Filter**: Use the powerful search bar to explore the data.
+8.  **Filter Facts/Columns**: Click the filter icon to open the Fact Filter panel. Check or uncheck facts to control which columns are visible in the tables. In Pivot View, you can also click the 'x' on a column header to hide it.
+9.  **Toggle Modified Date**: Click the clock icon to show or hide the "Modified" column.
+10. **Export Data**: Click the export button to download the currently filtered data as CSV or XLSX.
+11. **Customize View**: Use the density, theme, and full-screen toggles to adjust the application's appearance.
 
 ## 📁 Project Structure
 
@@ -103,8 +115,11 @@ If you plan to use the PostgreSQL data source, your database needs a `facts` tab
 .
 ├── components/          # React UI components
 │   ├── FactBrowser.tsx    # Main application component
-│   ├── FactTable.tsx      # Virtualized data table
-│   └── ...              # Other UI elements
+│   ├── FactTable.tsx      # Virtualized list view table
+│   ├── PivotedFactTable.tsx # Virtualized pivot view table
+│   ├── Dashboard.tsx      # Dashboard with stats and charts
+│   ├── FactFilter.tsx     # Panel for showing/hiding facts (columns)
+│   └── ...              # Other UI elements (Buttons, Icons, etc.)
 ├── services/            # Frontend data fetching logic
 │   ├── apiService.ts      # Logic to call the backend API
 │   └── demoService.ts     # Logic for loading static demo data

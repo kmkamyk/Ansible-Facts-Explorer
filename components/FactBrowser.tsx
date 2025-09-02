@@ -129,6 +129,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
   // State for dashboard
   const [isDashboardVisible, setIsDashboardVisible] = useState(false);
+  const [chartFactSelections, setChartFactSelections] = useState<[string, string]>(['ansible_distribution', 'role']);
+
 
   // Fetch service status on initial load
   useEffect(() => {
@@ -722,7 +724,13 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
             </div>
 
             <div className="px-4 sm:px-6">
-                <Dashboard facts={filteredFacts} isVisible={isDashboardVisible} />
+                <Dashboard
+                  facts={filteredFacts}
+                  isVisible={isDashboardVisible}
+                  allFactPaths={allFactPaths}
+                  chartFactSelections={chartFactSelections}
+                  onChartFactSelectionChange={setChartFactSelections}
+                />
             </div>
             
             <FactFilter
