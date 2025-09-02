@@ -13,7 +13,7 @@ import ThemeSwitcher from './ThemeSwitcher';
 import ViewSwitcher, { ViewMode } from './ViewSwitcher';
 import FactFilter from './FactFilter';
 import { DENSITY_THEME } from '../styles/densityTheme';
-import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, FilterIcon, ExpandIcon, CompressIcon, ChevronDownIcon, ChartBarIcon } from './icons/Icons';
+import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, ExpandIcon, CompressIcon, ChevronDownIcon, ChartBarIcon } from './icons/Icons';
 import Dashboard from './Dashboard';
 
 type Theme = 'light' | 'dark';
@@ -632,12 +632,19 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
           <div className="bg-gradient-to-br from-white to-slate-50 dark:bg-gradient-to-br dark:from-zinc-900 dark:to-zinc-950 rounded-2xl shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-white dark:ring-opacity-10 overflow-hidden h-full flex flex-col">
             <div className="relative z-30">
               <div className={`p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start gap-4`}>
-                <div className="w-full max-w-lg flex-shrink">
+                <div className="flex-shrink-0 w-full max-w-lg">
                   <SearchBar 
                     searchTerm={searchTerm} 
                     setSearchTerm={setSearchTerm}
                     isRegexValid={isRegexValid}
                     density={density}
+                    onFilterClick={() => setIsFactFilterVisible(!isFactFilterVisible)}
+                    isFilterActive={isFactFilterVisible}
+                    isFilterDisabled={allFactPaths.length === 0}
+                    visibleFactCount={visibleFactPaths.size}
+                    totalFactCount={allFactPaths.length}
+                    showModifiedColumn={showModifiedColumn}
+                    onToggleModifiedColumn={() => setShowModifiedColumn(!showModifiedColumn)}
                   />
                   <p className={`text-xs text-slate-500 dark:text-zinc-400 pt-2`}>
                     Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.
@@ -655,34 +662,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                   >
                     <ChartBarIcon />
                   </Button>
-                  <Button
-                    onClick={() => setIsFactFilterVisible(!isFactFilterVisible)}
-                    variant="tertiary"
-                    shape="pill"
-                    density={density}
-                    className={`h-9 ${isFactFilterVisible ? 'bg-violet-100 dark:bg-violet-900/50' : ''}`}
-                    title="Filter visible facts"
-                    disabled={allFactPaths.length === 0}
-                  >
-                    <FilterIcon />
-                    <span className="hidden sm:inline">Facts</span>
-                    {allFactPaths.length > 0 && (
-                      <span className="text-xs bg-slate-300 dark:bg-zinc-700 rounded-full px-2 py-0.5 ml-1">
-                        {visibleFactPaths.size}/{allFactPaths.length}
-                      </span>
-                    )}
-                  </Button>
-                  <Button 
-                    onClick={() => setShowModifiedColumn(!showModifiedColumn)} 
-                    variant="tertiary" 
-                    shape="pill" 
-                    density={density} 
-                    className={`h-9 ${showModifiedColumn ? 'bg-violet-100 dark:bg-violet-900/50' : ''}`}
-                    title="Toggle modified date column"
-                  >
-                      <ClockIcon />
-                  </Button>
-                  <ViewSwitcher viewMode={viewMode} onViewModeChange={setViewMode} className="h-9" />
                   <div className="relative" ref={exportMenuRef}>
                     <Button
                       onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
@@ -719,6 +698,11 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                       </div>
                     )}
                   </div>
+                  <ViewSwitcher 
+                    viewMode={viewMode} 
+                    onViewModeChange={setViewMode}
+                    className="h-9"
+                  />
                   <Button 
                     onClick={() => setIsFullScreen(!isFullScreen)} 
                     variant="tertiary" 

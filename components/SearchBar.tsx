@@ -1,19 +1,42 @@
 import React from 'react';
 import { Density } from '../types';
 import { DENSITY_THEME } from '../styles/densityTheme';
-import { QuestionMarkCircleIcon, XCircleIcon } from './icons/Icons';
+import { QuestionMarkCircleIcon, XCircleIcon, FilterIcon, ClockIcon } from './icons/Icons';
+import ViewSwitcher, { ViewMode } from './ViewSwitcher';
 
 interface SearchBarProps {
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   isRegexValid: boolean;
   density?: Density;
+  // Props for the integrated filter button
+  onFilterClick: () => void;
+  isFilterActive: boolean;
+  isFilterDisabled: boolean;
+  visibleFactCount: number;
+  totalFactCount: number;
+  // New props for integrated controls
+  showModifiedColumn: boolean;
+  onToggleModifiedColumn: () => void;
 }
 
-const SearchBar: React.FC<SearchBarProps> = ({ searchTerm, setSearchTerm, isRegexValid, density = 'spacious' }) => {
+const SearchBar: React.FC<SearchBarProps> = ({ 
+  searchTerm, 
+  setSearchTerm, 
+  isRegexValid, 
+  density = 'spacious',
+  onFilterClick,
+  isFilterActive,
+  isFilterDisabled,
+  visibleFactCount,
+  totalFactCount,
+  showModifiedColumn,
+  onToggleModifiedColumn,
+}) => {
   const densityClasses = DENSITY_THEME[density].input;
   
-  const baseInputClasses = `block w-full bg-slate-200 dark:bg-zinc-800 rounded-full pl-10 pr-16 text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none transition-shadow duration-200`;
+  // Decreased right padding after moving some controls out
+  const baseInputClasses = `block w-full bg-slate-200 dark:bg-zinc-800 rounded-full pl-10 pr-52 text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none transition-shadow duration-200`;
   const validationClasses = !isRegexValid && searchTerm
     ? "ring-2 ring-red-500/70"
     : "focus:ring-2 focus:ring-violet-500/70 dark:focus:ring-violet-400/70";
@@ -35,7 +58,40 @@ const SearchBar: React.FC<SearchBarProps> = ({ searchTerm, setSearchTerm, isRege
           aria-invalid={!isRegexValid && searchTerm ? 'true' : 'false'}
           aria-describedby="regex-error"
         />
-        <div className="absolute inset-y-0 right-0 pr-3 flex items-center gap-2">
+        <div className="absolute inset-y-0 right-0 pr-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onFilterClick}
+              disabled={isFilterDisabled}
+              title="Filter visible facts"
+              className={`flex-shrink-0 flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-200 dark:focus:ring-offset-zinc-800 focus:ring-violet-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+                isFilterActive 
+                  ? 'bg-violet-100 dark:bg-violet-900/60 text-violet-700 dark:text-violet-300 ring-1 ring-violet-300 dark:ring-violet-600/80' 
+                  : 'bg-slate-300/70 dark:bg-zinc-700/70 text-slate-600 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+              }`}
+            >
+              <FilterIcon />
+              <span>Facts</span>
+              {totalFactCount > 0 && (
+                <span className="text-xs bg-slate-400/50 dark:bg-zinc-600/50 rounded-full px-1.5 py-0.5">
+                  {visibleFactCount}/{totalFactCount}
+                </span>
+              )}
+            </button>
+
+            <button
+                type="button"
+                onClick={onToggleModifiedColumn}
+                title="Toggle modified date column"
+                className={`flex-shrink-0 flex items-center justify-center h-7 w-7 rounded-full text-xs font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-200 dark:focus:ring-offset-zinc-800 focus:ring-violet-500 ${
+                  showModifiedColumn 
+                    ? 'bg-violet-100 dark:bg-violet-900/60 text-violet-700 dark:text-violet-300' 
+                    : 'bg-slate-300/70 dark:bg-zinc-700/70 text-slate-600 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                }`}
+            >
+                <ClockIcon />
+            </button>
+
             {searchTerm && (
                 <button 
                     type="button" 
