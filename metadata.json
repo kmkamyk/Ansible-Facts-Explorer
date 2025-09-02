@@ -1,0 +1,5 @@
+{
+  "name": "Ansible Facts Explorer v1",
+  "description": "An application to fetch, browse, and dynamically search facts from an Ansible AWX instance. Results are displayed in a filterable table and can be exported to CSV.",
+  "requestFramePermissions": []
+}
