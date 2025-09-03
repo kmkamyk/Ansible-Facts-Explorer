@@ -95,13 +95,87 @@ const pivotFactsForExport = (facts: FactRow[]): { data: Record<string, any>[]; h
     return { data: dataForExport, headers: ['hostname', ...sortedFactPaths] };
 };
 
+const matchesPill = (fact: FactRow, pill: string): boolean => {
+    const trimmedPill = pill.trim();
+    if (!trimmedPill) return true;
+
+    const operatorRegex = /^(.*?)\s*(!=|>=|<=|>|<|=)\s*(.*)$/;
+    const match = trimmedPill.match(operatorRegex);
+
+    if (match) {
+        const [, key, operator, value] = match.map(s => s ? s.trim() : '');
+        if (key && value) {
+            const lowerKey = key.toLowerCase();
+            const lowerValue = value.toLowerCase();
+
+            // For key-value searches, only match against the relevant key (factPath)
+            if (!fact.factPath.toLowerCase().endsWith(lowerKey)) {
+                return false;
+            }
+
+            const factValue = fact.value;
+            switch (operator) {
+                case '=': return String(factValue).toLowerCase() === lowerValue;
+                case '!=': return String(factValue).toLowerCase() !== lowerValue;
+                case '>': case '<': case '>=': case '<=':
+                    const numericFactValue = parseFloat(String(factValue));
+                    const numericSearchValue = parseFloat(value);
+                    if (isNaN(numericFactValue) || isNaN(numericSearchValue)) return false;
+                    if (operator === '>') return numericFactValue > numericSearchValue;
+                    if (operator === '<') return numericFactValue < numericSearchValue;
+                    if (operator === '>=') return numericFactValue >= numericSearchValue;
+                    if (operator === '<=') return numericFactValue <= numericSearchValue;
+                    return false;
+                default: return false;
+            }
+        }
+    }
+
+    if (trimmedPill.startsWith('"') && trimmedPill.endsWith('"')) {
+        const exactTerm = trimmedPill.substring(1, trimmedPill.length - 1).toLowerCase();
+        return (
+            fact.host.toLowerCase() === exactTerm ||
+            fact.factPath.toLowerCase() === exactTerm ||
+            String(fact.value).toLowerCase() === exactTerm
+        );
+    }
+    
+    // Default to regex/includes search across all fields for the pill
+    try {
+        const regex = new RegExp(trimmedPill, 'i');
+        return (
+            regex.test(fact.host) ||
+            regex.test(fact.factPath) ||
+            regex.test(String(fact.value)) ||
+            (fact.modified ? regex.test(String(fact.modified)) : false)
+        );
+    } catch (e) {
+        const lowercasedFilter = trimmedPill.toLowerCase();
+        return (
+            fact.host.toLowerCase().includes(lowercasedFilter) ||
+            fact.factPath.toLowerCase().includes(lowercasedFilter) ||
+            String(fact.value).toLowerCase().includes(lowercasedFilter) ||
+            (fact.modified ? String(fact.modified).toLowerCase().includes(lowercasedFilter) : false)
+        );
+    }
+};
+
+const matchesLiveSearch = (fact: FactRow, term: string): boolean => {
+    const lowercasedTerm = term.toLowerCase();
+    return (
+        fact.host.toLowerCase().includes(lowercasedTerm) ||
+        fact.factPath.toLowerCase().includes(lowercasedTerm) ||
+        String(fact.value).toLowerCase().includes(lowercasedTerm)
+    );
+};
+
 
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchPills, setSearchPills] = useState<string[]>([]);
+  const [searchInputValue, setSearchInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isRegexValid, setIsRegexValid] = useState(true);
   const [showModifiedColumn, setShowModifiedColumn] = useState(false);
   
   const [dataSource, setDataSource] = useState<'awx' | 'db' | 'demo'>('demo');
@@ -224,93 +298,35 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     }
   }, [dataSource]);
 
+  const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
+    const stringValue = String(value).trim();
+    if (stringValue && stringValue !== '---' && stringValue !== '(No data available)') {
+        const newPill = `"${stringValue}"`;
+        // Add new pill, avoiding duplicates
+        setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
+    }
+  }, []);
+
   const searchedFacts = useMemo(() => {
-    const trimmedSearchTerm = searchTerm.trim();
-    if (!trimmedSearchTerm) {
-      return allFacts;
+    const trimmedLiveSearch = searchInputValue.trim();
+    let intermediateFacts = allFacts;
+
+    // Apply pill filters first
+    if (searchPills.length > 0) {
+        intermediateFacts = allFacts.filter(fact => {
+            // A fact must match ALL pills to be included (AND logic)
+            return searchPills.every(pill => matchesPill(fact, pill));
+        });
     }
 
-    const operatorRegex = /^(.*?)\s*(!=|>=|<=|>|<|=)\s*(.*)$/;
-    const match = trimmedSearchTerm.match(operatorRegex);
-
-    if (match) {
-        const [, key, operator, value] = match.map(s => s ? s.trim() : '');
-        if (key && value) {
-            const lowerKey = key.toLowerCase();
-            const lowerValue = value.toLowerCase();
-            
-            return allFacts.filter(fact => {
-                if (!fact.factPath.toLowerCase().endsWith(lowerKey)) {
-                    return false;
-                }
-
-                const factValue = fact.value;
-
-                switch (operator) {
-                    case '=':
-                        return String(factValue).toLowerCase() === lowerValue;
-                    case '!=':
-                        return String(factValue).toLowerCase() !== lowerValue;
-                    case '>':
-                    case '<':
-                    case '>=':
-                    case '<=':
-                        const numericFactValue = parseFloat(String(factValue));
-                        const numericSearchValue = parseFloat(value);
-                        if (isNaN(numericFactValue) || isNaN(numericSearchValue)) {
-                            return false;
-                        }
-                        if (operator === '>') return numericFactValue > numericSearchValue;
-                        if (operator === '<') return numericFactValue < numericSearchValue;
-                        if (operator === '>=') return numericFactValue >= numericSearchValue;
-                        if (operator === '<=') return numericFactValue <= numericSearchValue;
-                        return false;
-                    default:
-                        return false;
-                }
-            });
-        }
-        return allFacts;
-    } else if (trimmedSearchTerm.startsWith('"') && trimmedSearchTerm.endsWith('"') && trimmedSearchTerm.length > 1) {
-        const exactTerm = trimmedSearchTerm.substring(1, trimmedSearchTerm.length - 1);
-        const lowercasedExactTerm = exactTerm.toLowerCase();
-        return allFacts.filter(fact =>
-            fact.host.toLowerCase() === lowercasedExactTerm ||
-            fact.factPath.toLowerCase() === lowercasedExactTerm ||
-            String(fact.value).toLowerCase() === lowercasedExactTerm ||
-            String(fact.modified).toLowerCase() === lowercasedExactTerm
-        );
-    } else {
-        let isCurrentlyValidRegex = true;
-        try {
-            new RegExp(trimmedSearchTerm);
-        } catch (e) {
-            isCurrentlyValidRegex = false;
-        }
-
-        if (isCurrentlyValidRegex) {
-            try {
-                const regex = new RegExp(trimmedSearchTerm, 'i');
-                return allFacts.filter(fact =>
-                    regex.test(fact.host) ||
-                    regex.test(fact.factPath) ||
-                    regex.test(String(fact.value)) ||
-                    regex.test(String(fact.modified))
-                );
-            } catch (e) {
-                return allFacts; // Fallback
-            }
-        } else {
-            const lowercasedFilter = trimmedSearchTerm.toLowerCase();
-            return allFacts.filter(fact =>
-                fact.host.toLowerCase().includes(lowercasedFilter) ||
-                fact.factPath.toLowerCase().includes(lowercasedFilter) ||
-                String(fact.value).toLowerCase().includes(lowercasedFilter) ||
-                String(fact.modified).toLowerCase().includes(lowercasedFilter)
-            );
-        }
+    // Apply live search filter on top of pill results
+    if (trimmedLiveSearch === '') {
+        return intermediateFacts;
     }
-  }, [allFacts, searchTerm]);
+
+    return intermediateFacts.filter(fact => matchesLiveSearch(fact, trimmedLiveSearch));
+  }, [allFacts, searchPills, searchInputValue]);
+
 
   const filteredFacts = useMemo(() => {
     // If all facts are visible, no need to filter further
@@ -324,43 +340,28 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   }, [searchedFacts, visibleFactPaths, allFactPaths]);
 
   const dashboardFacts = useMemo(() => {
-    // When a search is active, the dashboard should reflect stats for the hosts that match the search.
-    // To do this, we get the unique hostnames from the search results...
     const matchingHostnames = new Set(searchedFacts.map(fact => fact.host));
-
-    // ...and then pull *all* facts for those hosts from the original dataset.
-    // This ensures that stats like "Total vCPUs" are calculated correctly even if the user
-    // searched for a different fact (e.g., `role=webserver`).
-    if (searchTerm.trim()) {
+    if (searchPills.length > 0 || searchInputValue.trim() !== '') {
       return allFacts.filter(fact => matchingHostnames.has(fact.host));
     }
-
-    // If no search is active, the dashboard should show stats for all hosts.
     return allFacts;
-  }, [searchedFacts, allFacts, searchTerm]);
+  }, [searchedFacts, allFacts, searchPills, searchInputValue]);
 
   const pivotViewFilteredFacts = useMemo(() => {
-    const trimmedSearchTerm = searchTerm.trim();
-    // If not in pivot mode or no search is active, the data is the same as the list view's filtered facts.
-    if (viewMode !== 'pivot' || !trimmedSearchTerm) {
+    if (viewMode !== 'pivot' || (searchPills.length === 0 && searchInputValue.trim() === '')) {
         return filteredFacts;
     }
 
-    // When in pivot view with a search term:
-    // 1. Get the unique hostnames from the initial search results.
     const matchingHostnames = new Set(searchedFacts.map(fact => fact.host));
-
-    // 2. Filter the original `allFacts` to get all facts for those matching hosts.
     const allFactsForMatchingHosts = allFacts.filter(fact => matchingHostnames.has(fact.host));
     
-    // 3. Apply the column visibility filter (`visibleFactPaths`) to this complete set of facts.
     if (allFactPaths.length > 0 && visibleFactPaths.size === allFactPaths.length) {
         return allFactsForMatchingHosts;
     }
     return allFactsForMatchingHosts.filter(fact => 
         visibleFactPaths.has(fact.factPath) || fact.factPath === '---'
     );
-  }, [viewMode, searchTerm, searchedFacts, allFacts, filteredFacts, visibleFactPaths, allFactPaths]);
+  }, [viewMode, searchPills, searchInputValue, searchedFacts, allFacts, filteredFacts, visibleFactPaths, allFactPaths]);
   
   const handleRequestSort = (key: SortableKey) => {
     let direction: SortDirection = 'ascending';
@@ -447,20 +448,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     return sortedPivotedData;
   }, [viewMode, sortedListFacts, sortedPivotedData, showModifiedColumn]);
 
-  useEffect(() => {
-    const isSpecialQuery = searchTerm.trim().match(/^(.*?)\s*(!=|>=|<=|>|<|=)\s*(.*)$/) || (searchTerm.startsWith('"') && searchTerm.endsWith('"'));
-    if (!searchTerm || isSpecialQuery) {
-      setIsRegexValid(true);
-      return;
-    }
-    try {
-      new RegExp(searchTerm);
-      setIsRegexValid(true);
-    } catch (e) {
-      setIsRegexValid(false);
-    }
-  }, [searchTerm]);
-  
   const handleExportCSV = useCallback(() => {
     const { data, headers } = dataForExport;
     if (data.length === 0) return;
@@ -631,13 +618,13 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         ) : (
           <div className="bg-gradient-to-br from-white to-slate-50 dark:bg-gradient-to-br dark:from-zinc-900 dark:to-zinc-950 rounded-2xl shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-white dark:ring-opacity-10 overflow-hidden h-full flex flex-col">
             <div className="relative z-30">
-              <div className={`p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start gap-4`}>
-                <div className="flex-shrink-0 w-full max-w-lg">
+              <div className={`p-4 sm:p-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`}>
+                <div className="flex-1 min-w-[300px] sm:min-w-[400px]">
                   <SearchBar 
-                    searchTerm={searchTerm} 
-                    setSearchTerm={setSearchTerm}
-                    isRegexValid={isRegexValid}
-                    density={density}
+                    searchPills={searchPills} 
+                    setSearchPills={setSearchPills}
+                    searchInputValue={searchInputValue}
+                    setSearchInputValue={setSearchInputValue}
                     onFilterClick={() => setIsFactFilterVisible(!isFactFilterVisible)}
                     isFilterActive={isFactFilterVisible}
                     isFilterDisabled={allFactPaths.length === 0}
@@ -650,7 +637,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.
                   </p>
                 </div>
-                <div className={`flex items-center flex-wrap justify-start sm:justify-end gap-2`}>
+                <div className={`flex items-center shrink-0 gap-2`}>
                   <Button
                     onClick={() => setIsDashboardVisible(!isDashboardVisible)}
                     variant="tertiary"
@@ -761,6 +748,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                         sortConfig={sortConfig}
                         requestSort={handleRequestSort}
                         onScrollProgress={setScrollProgress}
+                        onCellClick={handleCellClick}
                     />
                 ) : (
                     <PivotedFactTable
@@ -771,6 +759,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                         requestSort={handleRequestSort}
                         onRemoveFactPath={handleRemoveFactPath}
                         onScrollProgress={setScrollProgress}
+                        onCellClick={handleCellClick}
                     />
                 )}
             </div>

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { FactRow, Density, SortConfig, SortableKey } from '../types';
 import { DENSITY_THEME } from '../styles/densityTheme';
@@ -11,6 +10,7 @@ interface FactTableProps {
   sortConfig: SortConfig | null;
   requestSort: (key: SortableKey) => void;
   onScrollProgress: (progress: number) => void;
+  onCellClick: (value: string | number | boolean | null | object) => void;
 }
 
 const OVERSCAN = 5; // Number of rows to render above and below the visible area
@@ -26,7 +26,7 @@ const formatDate = (isoString?: string): string => {
   }
 };
 
-const FactTable: React.FC<FactTableProps> = ({ facts, density, showModifiedColumn, sortConfig, requestSort, onScrollProgress }) => {
+const FactTable: React.FC<FactTableProps> = ({ facts, density, showModifiedColumn, sortConfig, requestSort, onScrollProgress, onCellClick }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -120,9 +120,9 @@ const FactTable: React.FC<FactTableProps> = ({ facts, density, showModifiedColum
           {paddingTop > 0 && <tr style={{ height: `${paddingTop}px` }} />}
           {virtualRows.map((fact) => (
             <tr key={fact.id} className="group hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors" style={{ height: `${rowHeight}px` }}>
-              <td className={`whitespace-nowrap overflow-hidden text-ellipsis pl-4 pr-3 text-sm font-medium text-slate-800 dark:text-zinc-100 sm:pl-6 ${cellPadding} font-open-sans`}>{fact.host}</td>
-              <td className={`whitespace-nowrap overflow-hidden text-ellipsis px-3 text-sm text-slate-500 dark:text-zinc-400 font-mono group-hover:text-slate-800 dark:group-hover:text-zinc-200 transition-colors ${cellPadding}`}>{fact.factPath}</td>
-              <td className={`whitespace-normal px-3 text-sm text-violet-600 dark:text-violet-400 font-mono break-all drop-shadow-[0_0_4px_rgba(167,139,250,0.3)] dark:drop-shadow-[0_0_6px_rgba(167,139,250,0.25)] ${cellPadding}`}>{String(fact.value)}</td>
+              <td onClick={() => onCellClick(fact.host)} className={`whitespace-nowrap overflow-hidden text-ellipsis pl-4 pr-3 text-sm font-medium text-slate-800 dark:text-zinc-100 sm:pl-6 ${cellPadding} font-open-sans cursor-pointer`}>{fact.host}</td>
+              <td onClick={() => onCellClick(fact.factPath)} className={`whitespace-nowrap overflow-hidden text-ellipsis px-3 text-sm text-slate-500 dark:text-zinc-400 font-mono group-hover:text-slate-800 dark:group-hover:text-zinc-200 transition-colors ${cellPadding} cursor-pointer`}>{fact.factPath}</td>
+              <td onClick={() => onCellClick(fact.value)} className={`whitespace-normal px-3 text-sm text-violet-600 dark:text-violet-400 font-mono break-all drop-shadow-[0_0_4px_rgba(167,139,250,0.3)] dark:drop-shadow-[0_0_6px_rgba(167,139,250,0.25)] ${cellPadding} cursor-pointer`}>{String(fact.value)}</td>
               {showModifiedColumn && (
                 <td className={`whitespace-nowrap px-3 text-sm text-slate-500 dark:text-zinc-400 ${cellPadding}`}>
                   {formatDate(fact.modified)}

@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { Density, SortConfig } from '../types';
 import { DENSITY_THEME } from '../styles/densityTheme';
@@ -12,9 +11,10 @@ interface PivotedFactTableProps {
   requestSort: (key: string) => void;
   onRemoveFactPath: (path: string) => void;
   onScrollProgress: (progress: number) => void;
+  onCellClick: (value: string | number | boolean | null | object) => void;
 }
 
-const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, density, sortConfig, requestSort, onRemoveFactPath, onScrollProgress }) => {
+const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, density, sortConfig, requestSort, onRemoveFactPath, onScrollProgress, onCellClick }) => {
   const { tableRowHeight: rowHeight, tableCellPadding: cellPadding } = DENSITY_THEME[density];
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -105,14 +105,16 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
           {data.map((row, rowIndex) => (
             <tr key={row.hostname || rowIndex} className="group hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors" style={{ height: `${rowHeight}px` }}>
               <td 
-                className={`sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-slate-50 dark:group-hover:bg-zinc-800/50 whitespace-nowrap overflow-hidden text-ellipsis pl-4 pr-3 text-sm font-medium text-slate-800 dark:text-zinc-100 sm:pl-6 ${cellPadding} border-r border-slate-200 dark:border-zinc-700 transition-colors font-open-sans`}
+                onClick={() => onCellClick(row[firstColumnHeader])}
+                className={`sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-slate-50 dark:group-hover:bg-zinc-800/50 whitespace-nowrap overflow-hidden text-ellipsis pl-4 pr-3 text-sm font-medium text-slate-800 dark:text-zinc-100 sm:pl-6 ${cellPadding} border-r border-slate-200 dark:border-zinc-700 transition-colors font-open-sans cursor-pointer`}
               >
                 {row[firstColumnHeader]}
               </td>
               {otherColumnHeaders.map(header => (
                 <td 
+                  onClick={() => onCellClick(row[header])}
                   key={header} 
-                  className={`whitespace-nowrap overflow-hidden text-ellipsis px-3 text-sm text-slate-500 dark:text-zinc-400 font-mono group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors ${cellPadding}`}
+                  className={`whitespace-nowrap overflow-hidden text-ellipsis px-3 text-sm text-slate-500 dark:text-zinc-400 font-mono group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors ${cellPadding} cursor-pointer`}
                 >
                   {String(row[header] === undefined || row[header] === null ? '' : row[header])}
                 </td>
