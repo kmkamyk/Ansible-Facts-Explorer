@@ -17,6 +17,39 @@ app.use(cors());
 const pool = new Pool(dbConfig);
 
 
+// --- Helper function to count facts in a way that matches frontend's row count ---
+const countTotalFacts = (allHostFacts) => {
+  const countLeafNodes = (obj) => {
+    if (typeof obj !== 'object' || obj === null) {
+      return 0;
+    }
+    let count = 0;
+    for (const key in obj) {
+      if (key === '__awx_facts_modified_timestamp') continue;
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          count += countLeafNodes(value);
+        } else {
+          count++; // Leaf node
+        }
+      }
+    }
+    return count;
+  };
+
+  let totalFactsForFrontend = 0;
+  for (const host in allHostFacts) {
+    if (Object.prototype.hasOwnProperty.call(allHostFacts, host)) {
+      const factCount = countLeafNodes(allHostFacts[host]);
+      // The frontend creates one "no data" row for hosts with 0 facts.
+      totalFactsForFrontend += Math.max(1, factCount);
+    }
+  }
+  return totalFactsForFrontend;
+};
+
+
 // --- Status Check Logic ---
 const isAwxConfigured = () => {
     return !!awxConfig.url && !!awxConfig.token && awxConfig.url !== 'https://awx.example.com' && awxConfig.token !== 'YOUR_SECRET_AWX_TOKEN';
@@ -33,13 +66,17 @@ const checkDbConnection = async () => {
     }
 };
 
-// --- AWX Data Fetching Logic (moved from frontend) ---
+// --- AWX Data Fetching Logic (Refactored for Robust Concurrency) ---
 const fetchFactsFromAwx = async () => {
   if (!isAwxConfigured()) {
     throw new Error('AWX is not configured on the backend. Please set AWX_URL and AWX_TOKEN environment variables.');
   }
 
-  const fetchOptions = {
+  console.log(`[AWX Fetch] Using AWX URL: ${awxConfig.url}`);
+  console.log(`[AWX Fetch] Concurrency limit set to: ${awxConfig.concurrencyLimit}`);
+  console.log(`[AWX Fetch] Request timeout set to: ${awxConfig.requestTimeout}ms`);
+
+  const baseFetchOptions = {
     headers: {
       'Authorization': `Bearer ${awxConfig.token}`,
       'Content-Type': 'application/json',
@@ -48,70 +85,125 @@ const fetchFactsFromAwx = async () => {
 
   const allHosts = [];
   let currentUrl = new URL('/api/v2/hosts/?page_size=100', awxConfig.url).href;
+  let pageNum = 1;
 
-  console.log(`Starting to fetch hosts from AWX...`);
+  console.log(`[AWX Fetch] Starting to fetch hosts from AWX...`);
   while (currentUrl) {
-    const response = await fetch(currentUrl, fetchOptions);
+    console.log(`[AWX Fetch] Fetching hosts page ${pageNum} from: ${currentUrl}`);
+    const response = await fetch(currentUrl, baseFetchOptions);
     if (!response.ok) {
+      console.error(`[AWX Fetch] Error response from AWX when fetching hosts: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text();
+      console.error(`[AWX Fetch] Error body: ${errorBody}`);
       throw new Error(`Failed to fetch hosts list: ${response.statusText} (${response.status})`);
     }
     const data = await response.json();
     allHosts.push(...data.results);
     currentUrl = data.next ? new URL(data.next, awxConfig.url).href : null;
+    pageNum++;
   }
   
   const totalHosts = allHosts.length;
-  console.log(`Found ${totalHosts} hosts. Fetching facts for each...`);
+  console.log(`[AWX Fetch] AUDIT: Found ${totalHosts} total hosts. Sorting and fetching facts...`);
   if (totalHosts === 0) {
     return {};
   }
+  
+  // Sort hosts for deterministic processing order, as suggested by the user.
+  allHosts.sort((a, b) => a.name.localeCompare(b.name));
 
-  const allHostFacts = {};
-  const concurrencyLimit = awxConfig.concurrencyLimit;
-  const queue = [...allHosts];
   const hostMap = new Map(allHosts.map(h => [h.name, h]));
-  let processedCount = 0;
+  
+  // This function processes a single host and returns a result object.
+  // It no longer mutates shared state, preventing race conditions.
+  const processHost = async (host) => {
+    if (!host) return null;
+    
+    const hostWithMeta = hostMap.get(host.name);
+    const maxRetries = 3;
 
-  const processQueue = async () => {
-    while (queue.length > 0) {
-      const host = queue.shift();
-      if (!host) continue;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), awxConfig.requestTimeout);
       
-      const hostWithMeta = hostMap.get(host.name);
-
       try {
         const factsUrl = new URL(host.related.ansible_facts, awxConfig.url).href;
-        const factsResponse = await fetch(factsUrl, fetchOptions);
+        const factsResponse = await fetch(factsUrl, { ...baseFetchOptions, signal: controller.signal });
+        clearTimeout(timeoutId);
         
         if (factsResponse.status === 404) {
-          allHostFacts[host.name] = {};
-        } else if (!factsResponse.ok) {
-          console.error(`Failed to fetch facts for ${host.name}: ${factsResponse.statusText}`);
-          allHostFacts[host.name] = { error: `Failed to fetch facts (${factsResponse.statusText})` };
-        } else {
-          const facts = await factsResponse.json();
-          if (hostWithMeta?.ansible_facts_modified) {
-              facts.__awx_facts_modified_timestamp = hostWithMeta.ansible_facts_modified;
-          }
-          allHostFacts[host.name] = facts;
+          return { status: 'no_facts', hostName: host.name, facts: {} };
+        } 
+        
+        if (!factsResponse.ok) {
+          throw new Error(`HTTP error ${factsResponse.status}: ${factsResponse.statusText}`);
         }
+
+        const facts = await factsResponse.json();
+        if (hostWithMeta?.ansible_facts_modified) {
+            facts.__awx_facts_modified_timestamp = hostWithMeta.ansible_facts_modified;
+        }
+        return { status: 'success', hostName: host.name, facts };
+
       } catch (error) {
-        console.error(`Error processing facts for ${host.name}:`, error);
-        allHostFacts[host.name] = { error: 'Network or parsing error while fetching facts.' };
-      } finally {
-        processedCount++;
-        // Log progress for every 25 hosts or on the last host
-        if (processedCount % 25 === 0 || processedCount === totalHosts) {
-            console.log(`[AWX Fetch Progress] Processed ${processedCount} of ${totalHosts} hosts.`);
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          console.error(`[AWX Fetch] Attempt ${attempt}/${maxRetries} for host '${host.name}' timed out.`);
+        } else {
+          console.error(`[AWX Fetch] Attempt ${attempt}/${maxRetries} for host '${host.name}' failed:`, error.message);
+        }
+        if (attempt < maxRetries) {
+          await new Promise(res => setTimeout(res, 1000));
         }
       }
     }
+
+    const errorMessage = `Failed to fetch facts after ${maxRetries} attempts.`;
+    console.error(`[AWX Fetch] All ${maxRetries} attempts failed for host '${host.name}'. Skipping.`);
+    return { status: 'failure', hostName: host.name, error: errorMessage, facts: { error: errorMessage } };
   };
+  
+  // --- Robust Concurrency Management: Process chunks concurrently, aggregate serially ---
+  console.log(`[AWX Fetch] Processing hosts in chunks with a concurrency limit of ${awxConfig.concurrencyLimit}.`);
+  const concurrencyLimit = awxConfig.concurrencyLimit;
+  
+  const allHostFacts = {};
+  let processedCount = 0;
+  let successCount = 0;
+  let failureCount = 0;
+  let noFactsCount = 0;
 
-  const workers = Array(concurrencyLimit).fill(null).map(() => processQueue());
-  await Promise.all(workers);
+  for (let i = 0; i < totalHosts; i += concurrencyLimit) {
+    const chunk = allHosts.slice(i, i + concurrencyLimit);
+    const promises = chunk.map(host => processHost(host));
+    
+    const results = await Promise.all(promises);
 
-  console.log('Finished fetching all facts from AWX.');
+    // Process results serially to prevent race conditions on counters and the final object.
+    for (const result of results) {
+        if (!result) continue;
+
+        processedCount++;
+        allHostFacts[result.hostName] = result.facts;
+        
+        if (result.status === 'success') successCount++;
+        else if (result.status === 'failure') failureCount++;
+        else if (result.status === 'no_facts') noFactsCount++;
+    }
+    console.log(`[AWX Fetch Progress] Processed ${processedCount}/${totalHosts} | Success: ${successCount} | Failures: ${failureCount} | No Facts: ${noFactsCount}`);
+  }
+
+  const totalIndividualFacts = countTotalFacts(allHostFacts);
+
+  console.log('[AWX Fetch] Finished fetching all facts from AWX.');
+  console.log(`[AWX Fetch Summary] Total Hosts Found: ${totalHosts} | Processed: ${processedCount} | Success: ${successCount} | Failures: ${failureCount} | No Facts: ${noFactsCount}`);
+  console.log(`[AWX Fetch Summary] ===> Total facts to be imported (frontend row count): ${totalIndividualFacts.toLocaleString()}`);
+  
+  if (totalHosts !== processedCount) {
+    console.error(`[AWX Fetch AUDIT FAILED] Mismatch between found hosts (${totalHosts}) and processed hosts (${processedCount}). This indicates a potential issue.`);
+  } else {
+    console.log(`[AWX Fetch AUDIT PASSED] All ${totalHosts} discovered hosts were processed.`);
+  }
   return allHostFacts;
 };
 

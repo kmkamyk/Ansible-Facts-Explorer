@@ -14,6 +14,7 @@ const awxConfig = {
   url: process.env.AWX_URL || 'https://awx.example.com',
   token: process.env.AWX_TOKEN || 'YOUR_SECRET_AWX_TOKEN',
   concurrencyLimit: parseInt(process.env.AWX_CONCURRENCY_LIMIT || '20', 10),
+  requestTimeout: parseInt(process.env.AWX_REQUEST_TIMEOUT || '30000', 10), // 30 seconds
 };
 
 const sslConfig = {
