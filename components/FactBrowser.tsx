@@ -618,7 +618,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         ) : (
           <div className="bg-gradient-to-br from-white to-slate-50 dark:bg-gradient-to-br dark:from-zinc-900 dark:to-zinc-950 rounded-2xl shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-white dark:ring-opacity-10 overflow-hidden h-full flex flex-col">
             <div className="relative z-30">
-              <div className={`p-4 sm:p-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`}>
+              <div className={`p-4 sm:p-6 flex flex-wrap items-start justify-between gap-x-32 gap-y-2`}>
                 <div className="flex-1 min-w-[300px] sm:min-w-[400px]">
                   <SearchBar 
                     searchPills={searchPills} 
@@ -769,7 +769,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
       {!isFullScreen && (
         <footer className="w-full text-xs text-slate-500 dark:text-zinc-500 py-1 flex items-center justify-end">
-            <div className="flex items-center gap-x-4">
+            <div className="flex items-center gap-x-32">
                 <span className="font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
                     KMK
                 </span>
