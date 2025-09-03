@@ -99,6 +99,7 @@ Backend jest odpowiedzialny za całe pobieranie danych ze źródeł zewnętrznyc
     -   **Dla źródła "Live AWX":**
         -   `AWX_URL`: Podstawowy adres URL Twojej instancji Ansible AWX/Tower (np. `https://awx.example.com`).
         -   `AWX_TOKEN`: Twój token aplikacji OAuth2 AWX.
+        -   `AWX_INSECURE_SKIP_VERIFY`: Ustaw na `true`, jeśli Twoja instancja AWX używa certyfikatu SSL z podpisem własnym (self-signed). (np. `AWX_INSECURE_SKIP_VERIFY=true`). **Używaj ostrożnie.**
     -   **Dla źródła "Cached DB":**
         -   `DB_HOST`: Nazwa hosta Twojego serwera PostgreSQL.
         -   `DB_PORT`: Numer portu Twojego serwera PostgreSQL (domyślnie: `5432`).

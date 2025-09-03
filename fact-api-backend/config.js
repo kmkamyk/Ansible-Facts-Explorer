@@ -13,6 +13,7 @@ const dbConfig = {
 const awxConfig = {
   url: process.env.AWX_URL || 'https://awx.example.com',
   token: process.env.AWX_TOKEN || 'YOUR_SECRET_AWX_TOKEN',
+  insecureSkipVerify: process.env.AWX_INSECURE_SKIP_VERIFY === 'true',
 };
 
 const sslConfig = {
