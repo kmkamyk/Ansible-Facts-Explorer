@@ -59,12 +59,18 @@ const fetchFactsFromAwx = async () => {
     allHosts.push(...data.results);
     currentUrl = data.next ? new URL(data.next, awxConfig.url).href : null;
   }
-  console.log(`Found ${allHosts.length} hosts. Fetching facts for each...`);
+  
+  const totalHosts = allHosts.length;
+  console.log(`Found ${totalHosts} hosts. Fetching facts for each...`);
+  if (totalHosts === 0) {
+    return {};
+  }
 
   const allHostFacts = {};
-  const concurrencyLimit = 100;
+  const concurrencyLimit = awxConfig.concurrencyLimit;
   const queue = [...allHosts];
   const hostMap = new Map(allHosts.map(h => [h.name, h]));
+  let processedCount = 0;
 
   const processQueue = async () => {
     while (queue.length > 0) {
@@ -92,6 +98,12 @@ const fetchFactsFromAwx = async () => {
       } catch (error) {
         console.error(`Error processing facts for ${host.name}:`, error);
         allHostFacts[host.name] = { error: 'Network or parsing error while fetching facts.' };
+      } finally {
+        processedCount++;
+        // Log progress for every 25 hosts or on the last host
+        if (processedCount % 25 === 0 || processedCount === totalHosts) {
+            console.log(`[AWX Fetch Progress] Processed ${processedCount} of ${totalHosts} hosts.`);
+        }
       }
     }
   };

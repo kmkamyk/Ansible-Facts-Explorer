@@ -98,6 +98,7 @@ The backend is responsible for all data fetching from external sources. It must 
     -   **For the "Live AWX" source:**
         -   `AWX_URL`: The base URL of your Ansible AWX/Tower instance (e.g., `https://awx.example.com`).
         -   `AWX_TOKEN`: Your AWX OAuth2 application token.
+        -   `AWX_CONCURRENCY_LIMIT`: The number of concurrent requests to make to the AWX API when fetching facts. Defaults to `20`.
     -   **For the "Cached DB" source:**
         -   `DB_HOST`: The hostname of your PostgreSQL server.
         -   `DB_PORT`: The port number for your PostgreSQL server (default: `5432`).
