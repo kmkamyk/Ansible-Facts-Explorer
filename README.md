@@ -1,62 +1,61 @@
-
 ![Ansible Facts Explorer Screenshot](docs/app-screenshot.png)
 
 # Ansible Facts Explorer
 
-Ansible Facts Explorer to potężna i intuicyjna aplikacja internetowa przeznaczona do pobierania, przeglądania i dynamicznego przeszukiwania faktów Ansible z różnych źródeł danych, w tym z instancji Ansible AWX na żywo, zbuforowanej bazy danych PostgreSQL lub lokalnych danych demonstracyjnych. Zapewnia wysoce wydajny, przyjazny dla użytkownika interfejs dla inżynierów i administratorów, umożliwiający szybkie znajdowanie i analizowanie szczegółów konfiguracji na zarządzanych hostach.
+Ansible Facts Explorer is a powerful and intuitive web application designed to fetch, browse, and dynamically search Ansible facts from various data sources, including a live Ansible AWX instance, a cached PostgreSQL database, or local demo data. It provides a highly performant, user-friendly interface for engineers and administrators to quickly find and analyze configuration details across their managed hosts.
 
-## ✨ Kluczowe Funkcje
+## ✨ Key Features
 
-- **Wiele Źródeł Danych**: Płynnie przełączaj się między pobieraniem danych z API AWX na żywo, wstępnie wypełnionej bazy danych PostgreSQL lub wbudowanych danych demonstracyjnych.
-- **Interaktywny Pulpit Nawigacyjny**: Uzyskaj ogólny przegląd swojej infrastruktury dzięki dynamicznemu pulpitowi nawigacyjnemu, zawierającemu:
-  - Karty kluczowych metryk (całkowita liczba hostów, faktów, vCPU, pamięci).
-  - Konfigurowalne wykresy słupkowe do wizualizacji dystrybucji dowolnego faktu (np. dystrybucji systemów operacyjnych, wersji aplikacji).
-- **Dwa Widoki Tabel**:
-    - **Widok Listy**: Tradycyjna, płaska lista wszystkich faktów, idealna do wyszukiwania i sortowania na wszystkich hostach.
-    - **Widok Obrotowy (Pivot)**: Widok skoncentrowany na hoście, w którym każdy wiersz to host, a fakty są kolumnami, doskonały do porównywania określonych konfiguracji między maszynami.
-- **Zaawansowane Wyszukiwanie i Filtrowanie**: Jeden pasek wyszukiwania obsługuje:
-  - **Wyszukiwanie tekstowe**: Natychmiast filtruje nazwy hostów, ścieżki faktów i wartości.
-  - **Wyrażenia Regularne**: Do skomplikowanego dopasowywania wzorców.
-  - **Filtrowanie Klucz-Wartość**: Używaj operatorów (`=`, `!=`, `>`, `<`, `>=`, `<=`) do precyzyjnych zapytań (np. `ansible_processor_vcpus > 4`, `ansible_distribution = Ubuntu`).
-  - **Dokładne Dopasowanie**: Umieść zapytanie w cudzysłowie, aby uzyskać dokładne dopasowanie.
-- **Dynamiczne Zarządzanie Kolumnami**:
-    - **Panel Filtrowania Faktów**: Łatwo pokazuj lub ukrywaj setki ścieżek faktów w tabelach, aby skupić się na tym, co najważniejsze.
-    - **Usuwanie Kolumn w Tabeli**: W widoku obrotowym usuwaj kolumny bezpośrednio z nagłówka w celu szybkiej analizy.
-    - **Przełączanie znaczników czasu**: Pokaż lub ukryj kolumnę "Zmodyfikowano", aby zobaczyć, kiedy fakty zostały ostatnio zaktualizowane.
-- **Wydajne Wirtualizowane Tabele**: Płynnie renderuje tysiące wierszy zarówno w widoku listy, jak i obrotowym, używając "windowingu" (wirtualnego przewijania), co zapewnia responsywność interfejsu użytkownika nawet przy ogromnych zbiorach danych.
-- **Eksport Danych**: Eksportuj przefiltrowane dane z dowolnego widoku do formatów **CSV** lub **XLSX** (Excel). Format eksportu inteligentnie dostosowuje się do bieżącego widoku.
-- **Dostosowywalny Interfejs Użytkownika**:
-  - **Ciemne i Jasne Motywy**: Dla komfortowego oglądania w każdym oświetleniu.
-  - **Kontrola Gęstości**: Dostosuj gęstość tabeli (Kompaktowa, Komfortowa, Przestronna).
-  - **Tryb Pełnoekranowy**: Rozszerz przeglądarkę, aby wypełnić ekran i uzyskać maksymalne skupienie.
-- **Bezpieczna Konfiguracja Sterowana przez Backend**: Wszystkie wrażliwe dane konfiguracyjne (tokeny API, dane logowania do bazy danych) są bezpiecznie obsługiwane przez serwer backendowy, skonfigurowany za pomocą zmiennych środowiskowych.
+- **Multiple Data Sources**: Seamlessly switch between fetching data from a live AWX API, a pre-populated PostgreSQL database, or built-in demo data.
+- **Interactive Dashboard**: Get a high-level overview of your infrastructure with a dynamic dashboard featuring:
+  - Key metric cards (total hosts, facts, vCPUs, memory).
+  - Configurable bar charts to visualize the distribution of any fact (e.g., OS distributions, application versions).
+- **Dual Table Views**:
+    - **List View**: A traditional, flat list of all facts, ideal for searching and sorting across all hosts.
+    - **Pivot View**: A host-centric view where each row is a host and facts are columns, perfect for comparing specific configurations between machines.
+- **Advanced Search & Filtering**: A single search bar supports:
+  - **Text Search**: Instantly filters hostnames, fact paths, and values.
+  - **Regular Expressions**: For complex pattern matching.
+  - **Key-Value Filtering**: Use operators (`=`, `!=`, `>`, `<`, `>=`, `<=`) for precise queries (e.g., `ansible_processor_vcpus > 4`, `ansible_distribution = Ubuntu`).
+  - **Exact Match**: Wrap your query in quotes for an exact match.
+- **Dynamic Column Management**:
+    - **Fact Filter Panel**: Easily show or hide hundreds of fact paths from the tables to focus on what matters.
+    - **In-Table Column Removal**: In Pivot View, remove columns directly from the header for quick analysis.
+    - **Timestamp Toggle**: Show or hide the "Modified" column to see when facts were last updated.
+- **Performant Virtualized Tables**: Smoothly renders thousands of rows in both List and Pivot views using "windowing" (virtual scrolling), ensuring a responsive UI even with massive datasets.
+- **Data Export**: Export your filtered data from any view to **CSV** or **XLSX** (Excel) formats. The export format intelligently adapts to the current view.
+- **Customizable UI**:
+  - **Dark & Light Themes**: For comfortable viewing in any lighting.
+  - **Density Control**: Adjust table density (Compact, Comfortable, Spacious).
+  - **Full-Screen Mode**: Expand the browser to fill the screen for maximum focus.
+- **Secure Backend-Driven Configuration**: All sensitive configuration details (API tokens, database credentials) are securely handled by a backend server configured via environment variables.
 
-##  diagrama: Jak to działa?
+##  diagrama: How It Works
 
-Aplikacja oddziela frontend od logiki pobierania danych. Backend działa jako bezpieczna brama do Twoich źródeł danych.
+The application decouples the frontend from the data-fetching logic. The backend acts as a secure gateway to your data sources.
 
 ```
 +------------------+      +---------------------+      +------------------------+
-| Przeglądarka     |      | Serwer Backendowy   |      | Źródła Danych          |
-| (Frontend React) |      | (Node.js/Express)   |      |                        |
+| Browser          |      | Backend Server      |      | Data Sources           |
+| (React Frontend) |      | (Node.js/Express)   |      |                        |
 +------------------+      +---------------------+      +------------------------+
         |                         |                              |
-        |  1. Żądanie API         |                              |
+        |  1. API Request         |                              |
         |  (/api/facts?source=...) |                              |
         | ----------------------> |                              |
-        |                         | 2. Pobierz dane              |
+        |                         | 2. Fetch Data                |
         |                         | -----------------------------> | Ansible AWX API
         |                         |                              |
-        |                         | lub                          |
+        |                         | or                           |
         |                         |                              |
-        |                         | -----------------------------> | Baza danych PostgreSQL
+        |                         | -----------------------------> | PostgreSQL Database
         |                         |                              |
-        |  3. Odpowiedź JSON      |                              |
-        |  (Dane faktów)          |                              |
+        |  3. JSON Response       |                              |
+        |  (Fact Data)            |                              |
         | <---------------------- |                              |
         |                         |                              |
-        | 4. Renderuj interfejs   |                              |
-        | użytkownika             |                              |
+        | 4. Render UI            |                              |
+        |                         |                              |
         v                         v                              v
 ```
 
@@ -64,66 +63,65 @@ Aplikacja oddziela frontend od logiki pobierania danych. Backend działa jako be
 
 - **Frontend**:
   - **Framework**: React 19
-  - **Język**: TypeScript
-  - **Styling**: Tailwind CSS dla nowoczesnego designu opartego na zasadzie "utility-first".
-  - **Eksport Danych**: Biblioteka `xlsx` do generowania plików Excel.
-- **Backend (dla źródeł Bazy Danych i AWX)**:
-  - **Framework**: Node.js z Express
-  - **Sterownik Bazy Danych**: `pg` (node-postgres)
-  - **Middleware**: `cors` do obsługi żądań cross-origin.
+  - **Language**: TypeScript
+  - **Styling**: Tailwind CSS for a modern, utility-first design.
+  - **Data Export**: `xlsx` library for Excel file generation.
+- **Backend (for DB & AWX sources)**:
+  - **Framework**: Node.js with Express
+  - **Database Driver**: `pg` (node-postgres)
+  - **Middleware**: `cors` for handling cross-origin requests.
 
-## 🚀 Pierwsze Kroki: Instalacja i Konfiguracja
+## 🚀 Getting Started: Installation & Setup
 
-Aplikacja została zaprojektowana do działania w samodzielnym środowisku. Aby używać jej z własnymi danymi, musisz skonfigurować serwer backendowy.
+The application is designed to run in a standalone environment. To use it with your own data, you must configure the backend server.
 
-### Wymagania Wstępne
+### Prerequisites
 
--   Node.js i npm (dla backendu)
--   Dostęp do instancji Ansible AWX i/lub serwera PostgreSQL (w zależności od wybranych źródeł danych)
+-   Node.js and npm (for the backend)
+-   Access to an Ansible AWX instance and/or a PostgreSQL server (depending on your chosen data sources)
 
-### 1. Konfiguracja i Uruchomienie Backendu
+### 1. Configure and Run the Backend
 
-Backend jest odpowiedzialny za całe pobieranie danych ze źródeł zewnętrznych. Musi być skonfigurowany za pomocą **zmiennych środowiskowych** ze względów bezpieczeństwa i elastyczności.
+The backend is responsible for all data fetching from external sources. It must be configured using **environment variables** for security and flexibility.
 
-1.  **Przejdź do katalogu backendu:**
+1.  **Navigate to the backend directory:**
     ```bash
     cd fact-api-backend/
     ```
-2.  **Zainstaluj zależności:**
+2.  **Install dependencies:**
     ```bash
     npm install
     ```
-3.  **Ustaw Zmienne Środowiskowe**:
-    Utwórz plik `.env` w katalogu `fact-api-backend/` lub wyeksportuj te zmienne w swojej powłoce.
+3.  **Set Environment Variables**:
+    Create a `.env` file in the `fact-api-backend/` directory or export these variables in your shell.
 
-    -   **Dla źródła "Live AWX":**
-        -   `AWX_URL`: Podstawowy adres URL Twojej instancji Ansible AWX/Tower (np. `https://awx.example.com`).
-        -   `AWX_TOKEN`: Twój token aplikacji OAuth2 AWX.
-        -   `AWX_INSECURE_SKIP_VERIFY`: Ustaw na `true`, jeśli Twoja instancja AWX używa certyfikatu SSL z podpisem własnym (self-signed). (np. `AWX_INSECURE_SKIP_VERIFY=true`). **Używaj ostrożnie.**
-    -   **Dla źródła "Cached DB":**
-        -   `DB_HOST`: Nazwa hosta Twojego serwera PostgreSQL.
-        -   `DB_PORT`: Numer portu Twojego serwera PostgreSQL (domyślnie: `5432`).
-        -   `DB_USER`: Użytkownik PostgreSQL do połączenia.
-        -   `DB_PASSWORD`: Hasło użytkownika PostgreSQL.
-        -   `DB_NAME`: Nazwa bazy danych do połączenia (domyślnie: `awx_facts`).
-    -   **Aby włączyć HTTPS na serwerze backendu (opcjonalnie):**
-        -   `SSL_CERT_PATH`: Ścieżka do Twojego certyfikatu SSL (np. `fullchain.pem`).
-        -   `SSL_KEY_PATH`: Ścieżka do Twojego prywatnego klucza SSL (np. `privkey.pem`).
-        -   `SSL_CA_PATH`: Ścieżka do Twojego pakietu Certificate Authority (CA).
+    -   **For the "Live AWX" source:**
+        -   `AWX_URL`: The base URL of your Ansible AWX/Tower instance (e.g., `https://awx.example.com`).
+        -   `AWX_TOKEN`: Your AWX OAuth2 application token.
+    -   **For the "Cached DB" source:**
+        -   `DB_HOST`: The hostname of your PostgreSQL server.
+        -   `DB_PORT`: The port number for your PostgreSQL server (default: `5432`).
+        -   `DB_USER`: The PostgreSQL user to connect as.
+        -   `DB_PASSWORD`: The password for the PostgreSQL user.
+        -   `DB_NAME`: The database name to connect to (default: `awx_facts`).
+    -   **To enable HTTPS on the backend server (optional):**
+        -   `SSL_CERT_PATH`: Path to your SSL certificate (e.g., `fullchain.pem`).
+        -   `SSL_KEY_PATH`: Path to your SSL private key (e.g., `privkey.pem`).
+        -   `SSL_CA_PATH`: Path to your Certificate Authority (CA) bundle.
 
-4.  **Uruchom serwer backendu:**
+4.  **Start the backend server:**
     ```bash
     npm start
     ```
-5.  Serwer będzie działał na `http://localhost:4000` (lub `https://localhost:4000`, jeśli skonfigurowano SSL).
+5.  The server will run on `http://localhost:4000` (or `https://localhost:4000` if SSL is configured).
 
-### 2. Schemat Bazy Danych (dla źródła "Cached DB")
+### 2. Database Schema (for "Cached DB" source)
 
-Jeśli planujesz używać źródła danych PostgreSQL, Twoja baza danych potrzebuje tabeli `facts` o prawidłowym schemacie.
+If you plan to use the PostgreSQL data source, your database needs a `facts` table with the correct schema.
 
-1.  Upewnij się, że masz zainstalowany i uruchomiony PostgreSQL.
-2.  Utwórz bazę danych (np. `awx_facts`).
-3.  Utwórz tabelę. Kolumna `modified_at` jest kluczowa do śledzenia aktualności danych.
+1.  Ensure you have PostgreSQL installed and running.
+2.  Create a database (e.g., `awx_facts`).
+3.  Create the table. The `modified_at` column is crucial for tracking data freshness.
     ```sql
     CREATE TABLE facts (
         id SERIAL PRIMARY KEY,
@@ -133,91 +131,91 @@ Jeśli planujesz używać źródła danych PostgreSQL, Twoja baza danych potrzeb
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     ```
-4.  Wypełnij tę tabelę faktami swoich hostów. Kolumna `data` powinna zawierać obiekt JSON z faktami, a `modified_at` powinna przechowywać znacznik czasu, kiedy te fakty zostały zebrane.
+4.  Populate this table with your host facts. The `data` column should contain the JSON object of facts, and `modified_at` should store the timestamp of when those facts were gathered.
 
-### 3. Uruchomienie Frontendu
+### 3. Running the Frontend
 
-Frontend jest w pełni statyczny.
+The frontend is fully static.
 
-1.  Otwórz plik `index.html` w głównej ścieżce projektu bezpośrednio w przeglądarce.
-2.  Frontend jest prekonfigurowany do komunikacji z backendem pod adresem `localhost:4000`.
+1.  Open the `index.html` file in the project's root path directly in your browser.
+2.  The frontend is pre-configured to communicate with the backend at `localhost:4000`.
 
-> **Uwaga**: Jeśli włączyłeś HTTPS na backendzie, prawdopodobnie będziesz musiał serwować pliki frontendu z serwera WWW, który również używa HTTPS, aby uniknąć błędów "mixed content" w przeglądarce.
+> **Note**: If you have enabled HTTPS on the backend, you will likely need to serve the frontend files from a web server that also uses HTTPS to avoid "mixed content" errors in the browser.
 
-## 📖 Przewodnik Użytkownika: Jak Korzystać z Aplikacji
+## 📖 User Guide: How to Use the App
 
-1.  **Ładowanie Danych**:
-    -   Użyj przełączników w nagłówku, aby wybrać między "Live AWX", "Cached DB" lub "Demo".
-    -   Kliknij przycisk **"Load Facts"**. Spowoduje to pobranie danych z wybranego źródła przez backend.
+1.  **Loading Data**:
+    -   Use the toggles in the header to select between "Live AWX", "Cached DB", or "Demo".
+    -   Click the **"Load Facts"** button. This will trigger the backend to fetch data from your selected source.
 
-2.  **Przeglądanie Pulpitu Nawigacyjnego**:
-    -   Kliknij ikonę wykresu słupkowego, aby przełączyć widok pulpitu nawigacyjnego i uzyskać ogólny przegląd.
-    -   Konfiguruj wykresy, klikając ikonę koła zębatego, aby wizualizować dystrybucję różnych faktów. Dodawaj lub usuwaj wykresy, aby dostosować widok.
+2.  **Exploring the Dashboard**:
+    -   Click the bar chart icon to toggle the dashboard for a high-level overview.
+    -   Configure the charts by clicking the cog icon to visualize the distribution of different facts. Add or remove charts to customize your view.
 
-3.  **Przełączanie Widoków**:
-    -   Użyj przełącznika widoków, aby przełączać się między płaskim **Widokiem Listy** (dobrym do globalnego wyszukiwania) a skoncentrowanym na hoście **Widokiem Obrotowym** (idealnym do porównywania hostów obok siebie).
+3.  **Switching Views**:
+    -   Use the view switcher to toggle between the flat **List View** (good for global searching) and the host-centric **Pivot View** (ideal for comparing hosts side-by-side).
 
-4.  **Wyszukiwanie i Filtrowanie**:
-    -   Użyj potężnego paska wyszukiwania, aby przeglądać dane. Przykłady:
-        -   `Ubuntu`: Znajdź wszystkie wystąpienia słowa "Ubuntu".
-        -   `role=webserver`: Znajdź wszystkie hosty, których `role` to `webserver`.
-        -   `vcpus > 4`: Znajdź hosty z więcej niż 4 vCPU.
-        -   `"22.04"`: Znajdź dokładne dopasowanie "22.04".
-    -   Kliknij ikonę filtra, aby otworzyć panel **Filtrowania Faktów**. Zaznacz lub odznacz fakty, aby kontrolować, które kolumny są widoczne w tabelach.
-    -   W **Widoku Obrotowym** możesz także kliknąć 'x' w nagłówku kolumny, aby ją ukryć.
+4.  **Searching and Filtering**:
+    -   Use the powerful search bar to drill down into your data. Examples:
+        -   `Ubuntu`: Find all instances of the word "Ubuntu".
+        -   `role=webserver`: Find all hosts where `role` is `webserver`.
+        -   `vcpus > 4`: Find hosts with more than 4 vCPUs.
+        -   `"22.04"`: Find an exact match for "22.04".
+    -   Click the filter icon to open the **Fact Filter** panel. Check or uncheck facts to control which columns are visible in the tables.
+    -   In **Pivot View**, you can also click the 'x' in a column header to hide it.
 
-5.  **Eksportowanie Danych**:
-    -   Kliknij przycisk eksportu, aby pobrać aktualnie przefiltrowane dane jako CSV lub XLSX. Eksport jest inteligentny — jego format dostosowuje się do aktywnego widoku (Lista lub Obrotowy).
+5.  **Exporting Data**:
+    -   Click the export button to download the currently filtered data as a CSV or XLSX file. The export is smart—its format adapts to the active view (List or Pivot).
 
-6.  **Dostosowywanie Wyglądu**:
-    -   Użyj przełączników gęstości, motywu i trybu pełnoekranowego, aby dostosować wygląd aplikacji do swoich preferencji.
+6.  **Customizing the Look**:
+    -   Use the density, theme, and full-screen toggles to adjust the application's appearance to your preference.
 
-## 🤔 Rozwiązywanie Problemów
+## 🤔 Troubleshooting
 
--   **Błąd "Could not connect to the backend API"**:
-    -   Upewnij się, że serwer backendowy (`fact-api-backend`) jest uruchomiony. Sprawdź terminal pod kątem komunikatów o błędach.
-    -   Sprawdź, czy serwer działa na `localhost:4000` lub czy frontend został zaktualizowany, aby wskazywać na właściwy adres.
+-   **"Could not connect to the backend API" error**:
+    -   Ensure the backend server (`fact-api-backend`) is running. Check its terminal for any error messages.
+    -   Verify the server is running on `localhost:4000` or that the frontend has been updated to point to the correct address.
 
--   **Błąd "CORS" w konsoli przeglądarki**:
-    -   Backend jest skonfigurowany do zezwalania na żądania, ale jeśli używasz złożonej konfiguracji sieciowej (np. proxy), upewnij się, że nagłówki `Origin` są poprawnie przekazywane.
+-   **"CORS" error in browser console**:
+    -   The backend is configured to allow requests, but if you are running a complex network setup (e.g., proxies), ensure the `Origin` headers are being passed correctly.
 
--   **Dane ze źródła nie ładują się (np. "AWX is not configured")**:
-    -   Sprawdź dwukrotnie, czy zmienne środowiskowe (`AWX_URL`, `AWX_TOKEN`, `DB_HOST` itp.) są poprawnie ustawione i wyeksportowane w terminalu, w którym uruchomiłeś serwer backendowy.
-    -   W przypadku źródła DB, upewnij się, że Twoja baza danych jest dostępna, a tabela `facts` istnieje i ma prawidłowy schemat.
+-   **Data from a source fails to load (e.g., "AWX is not configured")**:
+    -   Double-check that the environment variables (`AWX_URL`, `AWX_TOKEN`, `DB_HOST`, etc.) are set correctly and exported in the terminal where you launched the backend server.
+    -   For the DB source, ensure your database is accessible and that the `facts` table exists with the correct schema.
 
--   **Błąd "Mixed Content" w przeglądarce**:
-    -   Ten błąd występuje, gdy próbujesz połączyć się z backendem `https` z frontendu serwowanego przez `http`. Aby to naprawić, musisz serwować pliki frontendu (`index.html` itp.) z lokalnego serwera WWW, który również używa HTTPS.
+-   **"Mixed Content" error in browser**:
+    -   This occurs when you try to connect to an `https` backend from an `http`-served frontend. To fix this, you must serve the frontend files (`index.html`, etc.) from a local web server that also uses HTTPS.
 
-## 📁 Struktura Projektu
+## 📁 Project Structure
 
 ```
 .
-├── components/          # Komponenty interfejsu użytkownika React
-│   ├── FactBrowser.tsx    # Główny komponent aplikacji
-│   ├── FactTable.tsx      # Wirtualizowana tabela widoku listy
-│   ├── PivotedFactTable.tsx # Wirtualizowana tabela widoku obrotowego
-│   ├── Dashboard.tsx      # Pulpit nawigacyjny ze statystykami i wykresami
-│   ├── FactFilter.tsx     # Panel do pokazywania/ukrywania faktów (kolumn)
-│   └── ...              # Inne elementy interfejsu (przyciski, ikony itp.)
-├── services/            # Logika pobierania danych po stronie frontendu
-│   ├── apiService.ts      # Logika do wywoływania API backendu
-│   └── demoService.ts     # Logika do ładowania statycznych danych demonstracyjnych
-├── fact-api-backend/    # Backend Node.js/Express dla źródeł DB i AWX
-│   └── server.js        # Plik serwera backendu
-├── styles/              # Konfiguracja związana z interfejsem użytkownika
-│   └── densityTheme.ts  # Definicje motywów dla gęstości interfejsu
-├── App.tsx              # Główny komponent React
-├── index.html           # Główny plik HTML
+├── components/          # React UI components
+│   ├── FactBrowser.tsx    # Main application component
+│   ├── FactTable.tsx      # Virtualized list view table
+│   ├── PivotedFactTable.tsx # Virtualized pivot view table
+│   ├── Dashboard.tsx      # Dashboard with stats and charts
+│   ├── FactFilter.tsx     # Panel for showing/hiding facts (columns)
+│   └── ...              # Other UI elements (buttons, icons, etc.)
+├── services/            # Frontend data fetching logic
+│   ├── apiService.ts      # Logic for calling the backend API
+│   └── demoService.ts     # Logic for loading static demo data
+├── fact-api-backend/    # Node.js/Express backend for DB and AWX sources
+│   └── server.js        # The backend server file
+├── styles/              # UI-related configuration
+│   └── densityTheme.ts  # Theme definitions for UI density
+├── App.tsx              # Root React component
+├── index.html           # Main HTML file
 └── ...
 ```
 
-##  Autorstwo i podziękowania
+##  Authorship & Acknowledgements
 
-Koncepcja tej aplikacji oraz podpowiedzi użyte do jej stworzenia z pomocą AI zostały opracowane przez **Kamila Pytlińskiego**.
+The concept for this application and the prompts used to create it with AI assistance were developed by **Kamil Pytliński**.
 
 -   **GitHub**: [kmkamyk](https://github.com/kmkamyk)
 -   **LinkedIn**: [Kamil Pytliński](https://www.linkedin.com/in/kamil-pytli%C5%84ski-68ba44119/)
 
-## ⚖️ Licencja
+## ⚖️ License
 
-Ten projekt jest licencjonowany na podstawie **GNU General Public License v3.0 (GPL-3.0)**.
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.

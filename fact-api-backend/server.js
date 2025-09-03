@@ -39,24 +39,17 @@ const fetchFactsFromAwx = async () => {
     throw new Error('AWX is not configured on the backend. Please set AWX_URL and AWX_TOKEN environment variables.');
   }
 
-  // Create an HTTPS agent to handle self-signed certificates
-  const agent = new https.Agent({
-    rejectUnauthorized: !awxConfig.insecureSkipVerify,
-  });
-
   const fetchOptions = {
     headers: {
       'Authorization': `Bearer ${awxConfig.token}`,
       'Content-Type': 'application/json',
     },
-    // Only apply the custom agent for HTTPS connections
-    agent: awxConfig.url.startsWith('https:') ? agent : undefined,
   };
 
   const allHosts = [];
   let currentUrl = new URL('/api/v2/hosts/?page_size=100', awxConfig.url).href;
 
-  console.log(`Starting to fetch hosts from AWX... (Insecure skip verify: ${awxConfig.insecureSkipVerify})`);
+  console.log(`Starting to fetch hosts from AWX...`);
   while (currentUrl) {
     const response = await fetch(currentUrl, fetchOptions);
     if (!response.ok) {
