@@ -26,7 +26,17 @@ export const ClockIcon: React.FC = () => (
 
 export const SunIcon: React.FC = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.121-3.536a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.464-4.95a1 1 0 00-1.414 1.414l.707.707a1 1 0 001.414-1.414l-.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8.293 7.293a1 1 0 011.414 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zM5.05 13.536a1 1 0 010-1.414l.707-.707a1 1 0 011.414 1.414l-.707.707a1 1 0 01-1.414 0zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1z" clipRule="evenodd" />
+    <circle cx="10" cy="10" r="3.5" />
+    <g>
+      <rect x="9" y="2" width="2" height="3" rx="1" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(45 10 10)" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(90 10 10)" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(135 10 10)" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(180 10 10)" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(225 10 10)" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(270 10 10)" />
+      <rect x="9" y="2" width="2" height="3" rx="1" transform="rotate(315 10 10)" />
+    </g>
   </svg>
 );
 
