@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v2.0 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v2.1 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
 # - A dedicated PostgreSQL database with a randomly generated password.
@@ -59,17 +59,14 @@ function run_checks() {
 function deploy_frontend() {
   log_info "Deploying AFE frontend..."
 
-  if [[ ! -f "package.json" ]]; then
-     log_error "Frontend 'package.json' not found. Please run this script from the project's root directory."
+  if [[ ! -d "dist" ]]; then
+     log_error "Frontend build directory 'dist' not found. Please build the frontend first:"
+     log_error "  npm install && npm run build"
      exit 1
   fi
   
-  log_info "Installing frontend dependencies and building production assets..."
-  npm ci --prefer-offline --no-audit || npm install
-  npm run build
-
-  log_info "Syncing built files to $FRONTEND_DIR..."
-  mkdir -p "$FRONTEND_DIR"
+  log_info "Syncing built files from 'dist/' to $FRONTEND_DIR..."
+  # The directory is already created by the 'nginx' or 'all' step
   rsync -a --delete dist/ "$FRONTEND_DIR/"
   chown -R nginx:nginx "$FRONTEND_DIR"
 
@@ -102,9 +99,7 @@ function deploy_backend() {
   chown -R afeapi:afeapi "$BACKEND_DIR"
 
   log_info "Installing backend dependencies as user 'afeapi'..."
-  cd "$BACKEND_DIR"
-  sudo -u afeapi npm ci --prefer-offline --no-audit || sudo -u afeapi npm install
-  cd - > /dev/null
+  sudo -u afeapi npm ci --prefix "$BACKEND_DIR" --prefer-offline --no-audit || sudo -u afeapi npm install --prefix "$BACKEND_DIR"
 
   log_info "Configuring environment file at $ENV_FILE..."
   
@@ -191,13 +186,14 @@ function install_postgres() {
   systemctl enable --now postgresql
 
   log_info "Configuring database '$PGDB' and user '$PGUSER'..."
-  sudo -u postgres psql -c "SELECT 1 FROM pg_roles WHERE rolname='$PGUSER'" | grep -q 1 || sudo -u postgres psql -c "CREATE ROLE $PGUSER WITH LOGIN PASSWORD '$PGPASSWORD';"
-  sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw "$PGDB" || sudo -u postgres psql -c "CREATE DATABASE $PGDB OWNER $PGUSER;"
+  # Use `sudo -i -u` to ensure commands run in the postgres user's home directory context
+  sudo -i -u postgres -- psql -c "SELECT 1 FROM pg_roles WHERE rolname='$PGUSER'" | grep -q 1 || sudo -i -u postgres -- psql -c "CREATE ROLE $PGUSER WITH LOGIN PASSWORD '$PGPASSWORD';"
+  sudo -i -u postgres -- psql -lqt | cut -d \| -f 1 | grep -qw "$PGDB" || sudo -i -u postgres -- psql -c "CREATE DATABASE $PGDB OWNER $PGUSER;"
   
-  sudo -u postgres psql -d "$PGDB" -c "GRANT ALL PRIVILEGES ON DATABASE $PGDB TO $PGUSER;"
+  sudo -i -u postgres -- psql -d "$PGDB" -c "GRANT ALL PRIVILEGES ON DATABASE $PGDB TO $PGUSER;"
 
   log_info "Creating the 'facts' table if it doesn't exist..."
-  sudo -u postgres psql -d "$PGDB" <<SQL
+  sudo -i -u postgres -- psql -d "$PGDB" <<SQL
 CREATE TABLE IF NOT EXISTS facts (
     id SERIAL PRIMARY KEY,
     hostname VARCHAR(255) UNIQUE NOT NULL,
@@ -218,6 +214,12 @@ function configure_nginx() {
 
   dnf install -y nginx
   systemctl enable --now nginx
+
+  # Create the webroot directory *before* configuring Nginx to use it.
+  # This prevents Nginx from failing to start if the directory doesn't exist.
+  log_info "Ensuring frontend directory exists at $FRONTEND_DIR..."
+  mkdir -p "$FRONTEND_DIR"
+  chown nginx:nginx "$FRONTEND_DIR"
 
   log_info "Creating Nginx configuration at $NGINX_CONF..."
   tee "$NGINX_CONF" >/dev/null <<EOF
@@ -292,8 +294,8 @@ function uninstall_app() {
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log_info "Dropping database '$PGDB' and user '$PGUSER'..."
-        sudo -u postgres psql -c "DROP DATABASE IF EXISTS $PGDB;"
-        sudo -u postgres psql -c "DROP ROLE IF EXISTS $PGUSER;"
+        sudo -i -u postgres -- psql -c "DROP DATABASE IF EXISTS $PGDB;"
+        sudo -i -u postgres -- psql -c "DROP ROLE IF EXISTS $PGUSER;"
     else
         log_warn "PostgreSQL data was not removed."
     fi
@@ -321,7 +323,7 @@ fi
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 [frontend|backend|postgres|nginx|all|uninstall|status]"
   echo "  all:       Runs postgres, nginx, and backend installers."
-  echo "  frontend:  Builds and deploys the React frontend."
+  echo "  frontend:  Deploys the pre-built React frontend from the 'dist' directory."
   echo "  backend:   Deploys the Node.js backend service (requires DB password)."
   echo "  postgres:  Installs and configures PostgreSQL."
   echo "  nginx:     Installs and configures Nginx."
@@ -348,7 +350,8 @@ case "$1" in
     log_info "Backend Location:     $BACKEND_DIR"
     log_info "Environment File:     $ENV_FILE"
     log_info "Next Step: Remember to build and deploy the frontend using:"
-    log_info "sudo $0 frontend"
+    log_info "  npm install && npm run build"
+    log_info "  sudo $0 frontend"
     echo -e "\033[1;32m======================================================================\033[0m"
     ;;
   frontend)
