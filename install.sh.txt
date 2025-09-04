@@ -2,12 +2,13 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v2.2 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v2.5 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
 # - A dedicated PostgreSQL database with a randomly generated password.
 # - The Node.js API backend as a systemd service with interactive setup.
 # - An Nginx reverse proxy with automated firewall and port conflict resolution.
+# - Fixes for common permissions and SELinux issues (403 Forbidden).
 # - Full uninstall capability for clean removal.
 #
 # See README.md for detailed usage instructions.
@@ -29,7 +30,7 @@ log_info() {
 }
 
 log_warn() {
-  echo -e "\033[0;33m[WARN]\033[0m $1"
+  echo -e "\033[0;33m[WARN]\033[0m $1" >&2
 }
 
 log_error() {
@@ -50,7 +51,7 @@ function get_available_port() {
 # --- Pre-flight Checks ---
 function run_checks() {
     log_info "Running pre-flight checks..."
-    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss")
+    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss" "sestatus" "chcon")
     local missing_deps=0
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
@@ -79,6 +80,12 @@ function deploy_frontend() {
   # The directory should already be created by the 'nginx' or 'all' step
   rsync -a --delete dist/ "$FRONTEND_DIR/"
   chown -R nginx:nginx "$FRONTEND_DIR"
+
+  # Re-apply SELinux context after copying new files to prevent 403 errors
+  if sestatus | grep -q "Current mode:.*enforcing"; then
+    log_info "SELinux is enforcing. Re-applying 'httpd_sys_content_t' context to new frontend files..."
+    chcon -R -t httpd_sys_content_t "$FRONTEND_DIR" || log_warn "Failed to set SELinux context."
+  fi
 
   if systemctl is-active --quiet nginx; then
     log_info "Reloading Nginx to apply changes..."
@@ -110,8 +117,8 @@ function deploy_backend() {
 
   log_info "Installing backend dependencies as user 'afeapi'..."
   # Use 'npm install' as it's more robust than 'npm ci' for this scenario.
-  # It creates a lock file if one doesn't exist. --omit=dev for production.
-  sudo -u afeapi npm install --prefix "$BACKEND_DIR" --no-audit --omit=dev
+  # Explicitly set cache dir to avoid permission errors with system users that have no home dir.
+  sudo -u afeapi npm install --prefix "$BACKEND_DIR" --cache "$BACKEND_DIR/.npm-cache" --no-audit --omit=dev
 
   log_info "Configuring environment file at $ENV_FILE..."
   
@@ -229,15 +236,69 @@ function configure_nginx() {
   dnf install -y nginx
   systemctl enable --now nginx
 
+  # --- CRITICAL FIX 1: Disable default site in conf.d ---
+  if [[ -f /etc/nginx/conf.d/default.conf ]]; then
+    log_warn "Found default Nginx configuration in conf.d. Renaming to 'default.conf.bak' to prevent conflicts."
+    mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak
+  fi
+
+  # --- CRITICAL FIX 2: Disable default server block in nginx.conf for newer systems ---
+  # Check if the default welcome page is configured and active inside the main config file
+  if grep -qP '^\s*root\s+/usr/share/nginx/html;' /etc/nginx/nginx.conf; then
+      log_warn "Found active default server block in /etc/nginx/nginx.conf. Attempting to disable it."
+      local root_line_num start_line end_line end_line_relative
+      
+      # Find the line number of the specific root directive that identifies the default server block
+      root_line_num=$(grep -n "/usr/share/nginx/html" /etc/nginx/nginx.conf | head -n1 | cut -d: -f1)
+      
+      if [[ -n "$root_line_num" ]]; then
+          # Find the line number of the 'server {' that BEGINS the block containing our root directive
+          start_line=$(head -n "$root_line_num" /etc/nginx/nginx.conf | grep -n "^\s*server\s*{" | tail -n1 | cut -d: -f1)
+          # Find the relative line number of the '}' that ENDS the block
+          end_line_relative=$(tail -n +$start_line /etc/nginx/nginx.conf | grep -n "^\s*}" | head -n1 | cut -d: -f1)
+          
+          if [[ -n "$start_line" && -n "$end_line_relative" ]]; then
+              # Convert the relative end line number to an absolute one
+              end_line=$((start_line + end_line_relative - 1))
+              
+              if [[ "$end_line" -ge "$start_line" ]]; then
+                  log_info "Commenting out default server block from line $start_line to $end_line."
+                  sed -i.bak "$start_line,${end_line}s/^/#/" /etc/nginx/nginx.conf
+                  log_info "A backup of nginx.conf was created at /etc/nginx/nginx.conf.bak"
+              else
+                  log_warn "Could not reliably determine the end of the server block. Skipping automatic commenting."
+              fi
+          else
+              log_warn "Could not reliably determine the boundaries of the default server block. Skipping."
+              log_warn "You may need to manually comment out the default server block in /etc/nginx/nginx.conf."
+          fi
+      fi
+  fi
+
   # Create the webroot directory *before* configuring Nginx to use it.
   log_info "Ensuring frontend directory exists at $FRONTEND_DIR..."
   mkdir -p "$FRONTEND_DIR"
   chown nginx:nginx "$FRONTEND_DIR"
 
+  # --- CRITICAL FIX 3: Set correct permissions and SELinux context to prevent 403 Forbidden ---
+  # The Nginx user needs execute permission on all parent directories.
+  # /app is the parent, and might have been created with restrictive permissions by root.
+  log_info "Setting correct traversal permissions for /app directory..."
+  chmod 755 /app
+
+  # If SELinux is enforcing, Nginx cannot read files without the correct context.
+  if sestatus | grep -q "Current mode:.*enforcing"; then
+    log_info "SELinux is enforcing. Applying 'httpd_sys_content_t' context to $FRONTEND_DIR..."
+    # 'chcon' applies the context now. For persistence across reboots, 'semanage' would be needed,
+    # but chcon is sufficient for this script's scope and more universally available.
+    chcon -R -t httpd_sys_content_t "$FRONTEND_DIR" || log_warn "Failed to set SELinux context. This may cause 403 errors."
+  fi
+
   log_info "Creating Nginx configuration at $NGINX_CONF for port ${NGINX_PORT}..."
   tee "$NGINX_CONF" >/dev/null <<EOF
 server {
-    listen ${NGINX_PORT};
+    # Make this the default server for this port to avoid conflicts
+    listen ${NGINX_PORT} default_server;
     server_name _; # Listens on all hostnames
 
     root $FRONTEND_DIR;
@@ -245,12 +306,14 @@ server {
 
     # Serve static files for the React app
     location / {
-        try_files \$uri /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
     # Proxy API requests to the backend Node.js server
     location /api/ {
-        proxy_pass http://127.0.0.1:4000/;
+        # The trailing slash on the location but NOT on the proxy_pass
+        # ensures that a request to /api/facts is forwarded as /api/facts.
+        proxy_pass http://127.0.0.1:4000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
