@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v2.1 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v2.2 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
 # - A dedicated PostgreSQL database with a randomly generated password.
 # - The Node.js API backend as a systemd service with interactive setup.
-# - An Nginx reverse proxy with automated firewall configuration.
+# - An Nginx reverse proxy with automated firewall and port conflict resolution.
 # - Full uninstall capability for clean removal.
 #
 # See README.md for detailed usage instructions.
@@ -19,7 +19,6 @@ BACKEND_DIR="/data/afe-api"
 PGDATA="/var/lib/pgsql/15/data" # Default for RHEL/PostgreSQL 15 module
 PGUSER="afeuser"
 PGDB="afedb"
-# PGPASSWORD is now generated automatically
 ENV_FILE="/etc/afe-api.env"
 SERVICE_FILE="/etc/systemd/system/afe-api.service"
 NGINX_CONF="/etc/nginx/conf.d/afe.conf"
@@ -37,10 +36,21 @@ log_error() {
   echo -e "\033[0;31m[ERROR]\033[0m $1" >&2
 }
 
+# --- Utility Functions ---
+function get_available_port() {
+  local port=80
+  # Use ss to check if port 80 is actively listening. The regex ensures we don't match '8080'.
+  if ss -tln | grep -qP ':(80)\s'; then
+      port=8080
+      log_warn "Port 80 is already in use. AFE will be configured on port 8080."
+  fi
+  echo "$port"
+}
+
 # --- Pre-flight Checks ---
 function run_checks() {
     log_info "Running pre-flight checks..."
-    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo")
+    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss")
     local missing_deps=0
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
@@ -66,7 +76,7 @@ function deploy_frontend() {
   fi
   
   log_info "Syncing built files from 'dist/' to $FRONTEND_DIR..."
-  # The directory is already created by the 'nginx' or 'all' step
+  # The directory should already be created by the 'nginx' or 'all' step
   rsync -a --delete dist/ "$FRONTEND_DIR/"
   chown -R nginx:nginx "$FRONTEND_DIR"
 
@@ -91,7 +101,7 @@ function deploy_backend() {
 
   log_info "Syncing backend files to $BACKEND_DIR..."
   if [[ ! -d "fact-api-backend" ]]; then
-      log_error "Backend directory 'fact-api-backend' not found. Please ensure it exists in the current directory."
+      log_error "Backend directory 'fact-api-backend' not found. Please ensure it exists."
       exit 1
   fi
   mkdir -p "$BACKEND_DIR"
@@ -99,7 +109,9 @@ function deploy_backend() {
   chown -R afeapi:afeapi "$BACKEND_DIR"
 
   log_info "Installing backend dependencies as user 'afeapi'..."
-  sudo -u afeapi npm ci --prefix "$BACKEND_DIR" --prefer-offline --no-audit || sudo -u afeapi npm install --prefix "$BACKEND_DIR"
+  # Use 'npm install' as it's more robust than 'npm ci' for this scenario.
+  # It creates a lock file if one doesn't exist. --omit=dev for production.
+  sudo -u afeapi npm install --prefix "$BACKEND_DIR" --no-audit --omit=dev
 
   log_info "Configuring environment file at $ENV_FILE..."
   
@@ -211,20 +223,21 @@ SQL
 
 function configure_nginx() {
   log_info "Installing and configuring Nginx..."
+  
+  local NGINX_PORT=$1
 
   dnf install -y nginx
   systemctl enable --now nginx
 
   # Create the webroot directory *before* configuring Nginx to use it.
-  # This prevents Nginx from failing to start if the directory doesn't exist.
   log_info "Ensuring frontend directory exists at $FRONTEND_DIR..."
   mkdir -p "$FRONTEND_DIR"
   chown nginx:nginx "$FRONTEND_DIR"
 
-  log_info "Creating Nginx configuration at $NGINX_CONF..."
+  log_info "Creating Nginx configuration at $NGINX_CONF for port ${NGINX_PORT}..."
   tee "$NGINX_CONF" >/dev/null <<EOF
 server {
-    listen 80;
+    listen ${NGINX_PORT};
     server_name _; # Listens on all hostnames
 
     root $FRONTEND_DIR;
@@ -251,14 +264,14 @@ server {
 EOF
   
   if systemctl is-active --quiet firewalld; then
-    log_info "Firewalld is active. Adding rule for HTTP traffic..."
-    firewall-cmd --permanent --add-service=http
+    log_info "Firewalld is active. Adding rule for port ${NGINX_PORT}/tcp..."
+    firewall-cmd --permanent --add-port=${NGINX_PORT}/tcp
     firewall-cmd --reload
   fi
 
   log_info "Testing and reloading Nginx configuration..."
   nginx -t && systemctl reload nginx
-  log_info "Nginx configured with frontend at $FRONTEND_DIR and backend proxy."
+  log_info "Nginx configured with frontend at $FRONTEND_DIR, backend proxy, and listening on port ${NGINX_PORT}."
 }
 
 function uninstall_app() {
@@ -274,6 +287,23 @@ function uninstall_app() {
     systemctl stop afe-api.service nginx || true
     systemctl disable afe-api.service || true
 
+    if systemctl is-active --quiet firewalld; then
+        local NGINX_PORT
+        if [[ -f "$NGINX_CONF" ]]; then
+            # Reliably determine the port from the config file before deleting it
+            NGINX_PORT=$(grep -oP 'listen\s+\K[0-9]+' "$NGINX_CONF" || echo "80")
+            log_info "Removing firewall rule for port ${NGINX_PORT}/tcp..."
+            if firewall-cmd --query-port=${NGINX_PORT}/tcp --permanent; then
+                firewall-cmd --permanent --remove-port=${NGINX_PORT}/tcp
+                firewall-cmd --reload
+            else
+                log_warn "Firewall rule for port ${NGINX_PORT}/tcp not found. Skipping."
+            fi
+        else
+             log_warn "Nginx config not found. Could not determine port to remove from firewall."
+        fi
+    fi
+
     log_info "Removing files and directories..."
     rm -f "$SERVICE_FILE"
     rm -f "$NGINX_CONF"
@@ -283,12 +313,6 @@ function uninstall_app() {
 
     log_info "Reloading systemd daemon..."
     systemctl daemon-reload
-    
-    if systemctl is-active --quiet firewalld; then
-        log_info "Removing firewall rule for HTTP..."
-        firewall-cmd --permanent --remove-service=http
-        firewall-cmd --reload
-    fi
 
     read -p "Do you also want to remove the PostgreSQL user and database? [y/N] " -n 1 -r
     echo
@@ -338,14 +362,16 @@ case "$1" in
   all)
     log_info "Running 'all' tasks: postgres, nginx, backend..."
     GENERATED_PGPASSWORD=$(install_postgres)
-    configure_nginx
+    USED_NGINX_PORT=$(get_available_port)
+    configure_nginx "$USED_NGINX_PORT"
     deploy_backend "$GENERATED_PGPASSWORD"
     
     echo -e "\n\033[1;32m========================= INSTALLATION SUMMARY ========================="
     log_info "All backend services deployed successfully."
-    log_info "Database User:      $PGUSER"
+    log_info "Nginx Port:           $USED_NGINX_PORT (Access the app at http://<your_ip>:${USED_NGINX_PORT})"
+    log_info "Database User:        $PGUSER"
     log_info "Database Name:        $PGDB"
-    log_warn "Generated DB Password: $GENERATED_PGPASSWORD (Please save this password securely!)"
+    log_warn "Generated DB Password:  $GENERATED_PGPASSWORD (Please save this password securely!)"
     log_info "Frontend Location:    $FRONTEND_DIR"
     log_info "Backend Location:     $BACKEND_DIR"
     log_info "Environment File:     $ENV_FILE"
@@ -366,7 +392,8 @@ case "$1" in
     install_postgres
     ;;
   nginx)
-    configure_nginx
+    USED_NGINX_PORT=$(get_available_port)
+    configure_nginx "$USED_NGINX_PORT"
     ;;
   uninstall)
     uninstall_app
