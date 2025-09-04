@@ -59,6 +59,60 @@ The application decouples the frontend from the data-fetching logic. The backend
         v                         v                              v
 ```
 
+## 💡 Data Population Strategy
+
+This application reads and displays facts that are already stored in your chosen data source. For the best experience, it's important to have a strategy for regularly collecting and storing these facts.
+
+### For the "Live AWX" Source
+
+AWX/Tower stores facts when a playbook is run against a host, but only if fact caching is enabled.
+
+1.  **Enable Fact Caching**: In your AWX Job Templates or Inventory Sources, ensure the setting **"Enable Fact Cache"** is checked. When this is active, AWX will save the facts gathered from hosts during a playbook run, making them available to the API.
+
+2.  **Create a Dedicated Fact-Gathering Job**: While any playbook run can update facts, it's a best practice to create a specific, scheduled Job Template in AWX that does nothing but gather and refresh the facts for all your hosts. This ensures your data is consistently up-to-date.
+
+    A simple playbook for this job might look like this:
+
+    ```yaml
+    ---
+    - name: Gather and cache Ansible facts
+      hosts: all
+      gather_facts: true
+      tasks:
+        - name: Dummy task to ensure playbook runs
+          ansible.builtin.debug:
+            msg: "Facts have been gathered and will be cached by AWX."
+    ```
+
+3.  **Optimize Fact Collection (Optional)**: Ansible can gather a large amount of data, some of which you may not need. To improve performance and reduce storage, you can limit the facts that are collected. You can use the `ansible.builtin.setup` module with parameters like `gather_subset` or `filter`.
+
+    For example, to gather only network and hardware-related facts:
+
+    ```yaml
+    ---
+    - name: Gather a subset of Ansible facts
+      hosts: all
+      tasks:
+        - name: Gather only network and hardware facts
+          ansible.builtin.setup:
+            gather_subset:
+              - '!all'
+              - 'network'
+              - 'hardware'
+    ```
+
+    This customization makes both Ansible execution and subsequent browsing in the Facts Explorer much faster.
+
+### For the "Cached DB" Source
+
+The PostgreSQL database acts as a high-performance cache. It's designed to be populated periodically from a source of truth, typically your AWX instance. You can create a script (e.g., Python, Bash) that:
+
+1.  Uses the AWX API to fetch facts for all hosts (similar to what this application's backend does).
+2.  Connects to your PostgreSQL database.
+3.  Inserts or updates the facts for each host in the `facts` table, making sure to update the `hostname`, `data`, and `modified_at` fields.
+4.  Run this script on a schedule (e.g., via a cron job) to keep your cache fresh.
+
+
 ## 🛠️ Tech Stack
 
 - **Frontend**:
