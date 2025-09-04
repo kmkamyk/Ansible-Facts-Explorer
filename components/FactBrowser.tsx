@@ -551,6 +551,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
             </div>
             <div className="flex flex-col items-center sm:items-end">
                 <div className={`flex items-start flex-wrap justify-end ${densityTheme.headerGap}`}>
+                    <ThemeSwitcher theme={theme} onToggleTheme={toggleTheme} className="h-9 w-9" />
+                    <DensitySwitcher density={density} onDensityChange={setDensity} className="h-9" />
                     <div>
                         <div className="flex items-center p-0.5 bg-slate-200 dark:bg-zinc-800 rounded-full h-9">
                             <button
@@ -587,8 +589,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                             }
                         </p>
                     </div>
-                    <DensitySwitcher density={density} onDensityChange={setDensity} className="h-9" />
-                    <ThemeSwitcher theme={theme} onToggleTheme={toggleTheme} className="h-9 w-9" />
                     <Button onClick={handleLoadFacts} disabled={isLoading || isStatusLoading} density={density} variant="tertiary" shape="pill" className="h-9">
                         {isLoading ? <Spinner className="w-5 h-5"/> : <PlayIcon />}
                         {isLoading ? 'Loading...' : (factsLoaded ? 'Reload' : 'Load Facts')}
