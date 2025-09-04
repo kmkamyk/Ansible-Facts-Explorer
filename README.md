@@ -127,18 +127,25 @@ The PostgreSQL database acts as a high-performance cache. It's designed to be po
 
 ## ⚙️ Automated Installation (Linux)
 
-For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), an automated installation script is provided to streamline the setup of Nginx, PostgreSQL, and the application backend.
+For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), a powerful automated installation script is provided to streamline the entire deployment process.
 
-**Disclaimer**: This script will install packages and create system users and services. Please review the script's contents to understand the changes it will make to your system.
+**Script Features**:
+- **One-Command Backend Setup**: Installs and configures Nginx, PostgreSQL, and the Node.js backend service.
+- **Interactive Configuration**: Prompts for your AWX URL and token during setup, eliminating manual file editing.
+- **Automated Security**: Generates a strong, random password for the database user and securely stores it.
+- **Firewall Management**: Automatically opens the necessary HTTP port if `firewalld` is active.
+- **Clean Uninstall**: A dedicated command to completely remove all application components and data.
+- **Status Checks**: Easily verify that all services are running correctly.
+
+**Disclaimer**: This script will install packages, manage services, and create system users. Please review its contents (`install.sh`) to understand all changes it will make to your system.
 
 ### Prerequisites for the Script
 
 -   A RHEL-based Linux distribution with `dnf`.
 -   `sudo` privileges.
--   `git` to clone the repository.
--   `npm` (Node.js) is required for building the frontend. The script itself uses it for backend dependencies.
+-   `git`, `npm`, and `node` must be installed. The script will verify their presence.
 
-### How to Use the Script
+### Recommended Installation Procedure
 
 1.  **Clone the repository and navigate into it:**
     ```bash
@@ -147,49 +154,62 @@ For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), a
     ```
 
 2.  **Prepare the Script:**
-    A placeholder script named `install.sh.txt` is included to avoid platform issues. You must first rename it and make it executable.
+    A placeholder file `install.sh.txt` is used to avoid platform issues. You must rename it and make it executable.
     ```bash
-    # Rename the file (remove the .txt extension)
+    # Rename the file to make it a shell script
     mv install.sh.txt install.sh
 
-    # Make the script executable
+    # Grant execute permissions
     chmod +x install.sh
     ```
 
-3.  **Run the script with `sudo` for each component:**
-    The script is designed to be run in stages. You can run them one by one or use the `all` command to set up all backend services at once.
-
-    **Option A: Recommended (All-in-one)**
+3.  **Run the All-in-One Backend Installer:**
+    This single command handles the entire backend stack. It will prompt you for your AWX configuration details.
     ```bash
-    # This single command will install postgres, nginx, and the backend.
     sudo ./install.sh all
-
-    # Then, you must build and deploy the frontend separately:
-    # (This requires npm to be installed on your machine)
-    npm install && npm run build
-    sudo ./install.sh frontend
     ```
+    At the end of the process, an **Installation Summary** will be displayed, including the **auto-generated database password**. **Save this password in a secure location.**
 
-    **Option B: Step-by-step**
+4.  **Build and Deploy the Frontend:**
+    After the backend is running, build the React application and deploy it using the script.
     ```bash
-    # 1. Install and configure PostgreSQL
-    sudo ./install.sh postgres
-
-    # 2. Install and configure Nginx
-    sudo ./install.sh nginx
-
-    # 3. Deploy the Node.js backend
-    sudo ./install.sh backend
-
-    # 4. Build and deploy the React frontend
+    # Install dependencies and create the production build
     npm install && npm run build
+
+    # Use the script to deploy the built files to Nginx
     sudo ./install.sh frontend
     ```
-    
-4.  **Post-Installation Steps:**
-    -   After running the backend deployment, you **must** edit the environment file at `/etc/afe-api.env` to add your actual `AWX_URL` and `AWX_TOKEN`.
-    -   Restart the backend service after editing the file: `sudo systemctl restart afe-api.service`.
-    -   Populate the PostgreSQL database as described in the **Data Population Strategy** section.
+    Your application should now be live and accessible via your server's IP address or hostname.
+
+### Script Command Reference
+
+The script accepts several commands to manage different parts of the application:
+
+-   `sudo ./install.sh all`
+    -   The recommended command for first-time setup. Installs and configures PostgreSQL, Nginx, and the backend API service in one go.
+
+-   `sudo ./install.sh frontend`
+    -   Builds the React app (if not already built) and deploys the static files to the Nginx webroot (`/app/afe`).
+
+-   `sudo ./install.sh postgres`
+    -   Installs and configures PostgreSQL only. Creates the database and a dedicated user.
+
+-   `sudo ./install.sh nginx`
+    -   Installs and configures Nginx as a reverse proxy for the backend and serves the frontend.
+
+-   `sudo ./install.sh status`
+    -   Checks and displays the current status of the `nginx` and `afe-api` systemd services.
+
+-   `sudo ./install.sh uninstall`
+    -   Provides a safe, interactive way to completely remove the application. It will stop services, delete all configuration files and application directories, and optionally remove the PostgreSQL database and user.
+
+*Note: The `backend` command cannot be run standalone because it relies on the auto-generated password from the `postgres` or `all` step. Always use `all` for the initial backend setup.*
+
+### Post-Installation
+
+-   **Configuration File**: All backend settings, including your AWX token and the generated database password, are stored in `/etc/afe-api.env`. You can edit this file if you need to change your configuration.
+-   **Restarting the Service**: If you manually edit the environment file, you must restart the backend service to apply the changes: `sudo systemctl restart afe-api.service`.
+-   **Data Population**: Remember to populate your PostgreSQL database as described in the **Data Population Strategy** section.
 
 
 ## 🚀 Getting Started: Manual Installation & Setup

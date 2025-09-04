@@ -2,12 +2,13 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v2.0 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
-# - A dedicated PostgreSQL database.
-# - The Node.js API backend as a systemd service.
-# - An Nginx reverse proxy to serve the frontend and route API calls.
+# - A dedicated PostgreSQL database with a randomly generated password.
+# - The Node.js API backend as a systemd service with interactive setup.
+# - An Nginx reverse proxy with automated firewall configuration.
+# - Full uninstall capability for clean removal.
 #
 # See README.md for detailed usage instructions.
 # ==============================================================================
@@ -18,7 +19,7 @@ BACKEND_DIR="/data/afe-api"
 PGDATA="/var/lib/pgsql/15/data" # Default for RHEL/PostgreSQL 15 module
 PGUSER="afeuser"
 PGDB="afedb"
-PGPASSWORD="afepass" # In a real scenario, use a more secure method
+# PGPASSWORD is now generated automatically
 ENV_FILE="/etc/afe-api.env"
 SERVICE_FILE="/etc/systemd/system/afe-api.service"
 NGINX_CONF="/etc/nginx/conf.d/afe.conf"
@@ -36,24 +37,35 @@ log_error() {
   echo -e "\033[0;31m[ERROR]\033[0m $1" >&2
 }
 
+# --- Pre-flight Checks ---
+function run_checks() {
+    log_info "Running pre-flight checks..."
+    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo")
+    local missing_deps=0
+    for cmd in "${dependencies[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            log_error "Dependency missing: '$cmd'. Please install it and try again."
+            missing_deps=1
+        fi
+    done
+    if [[ $missing_deps -eq 1 ]]; then
+        exit 1
+    fi
+    log_info "All dependencies are present."
+}
+
 # --- Installation Functions ---
 
 function deploy_frontend() {
   log_info "Deploying AFE frontend..."
 
-  if ! command -v npm &> /dev/null; then
-    log_error "npm could not be found. Please install Node.js and npm first."
-    exit 1
-  fi
-
-  # Assuming script is run from project root where package.json is located
   if [[ ! -f "package.json" ]]; then
      log_error "Frontend 'package.json' not found. Please run this script from the project's root directory."
      exit 1
   fi
   
-  log_info "Installing frontend dependencies and building..."
-  npm ci || npm install
+  log_info "Installing frontend dependencies and building production assets..."
+  npm ci --prefer-offline --no-audit || npm install
   npm run build
 
   log_info "Syncing built files to $FRONTEND_DIR..."
@@ -64,8 +76,6 @@ function deploy_frontend() {
   if systemctl is-active --quiet nginx; then
     log_info "Reloading Nginx to apply changes..."
     nginx -t && systemctl reload nginx
-  else
-    log_warn "Nginx is not running. Frontend files deployed, but you may need to (re)start Nginx."
   fi
 
   log_info "Frontend deployed successfully to $FRONTEND_DIR"
@@ -73,6 +83,8 @@ function deploy_frontend() {
 
 function deploy_backend() {
   log_info "Deploying AFE backend..."
+  
+  local PGPASSWORD=$1
 
   # Create a non-login system user for the service
   if ! id "afeapi" &>/dev/null; then
@@ -91,13 +103,20 @@ function deploy_backend() {
 
   log_info "Installing backend dependencies as user 'afeapi'..."
   cd "$BACKEND_DIR"
-  sudo -u afeapi npm ci || sudo -u afeapi npm install
+  sudo -u afeapi npm ci --prefer-offline --no-audit || sudo -u afeapi npm install
   cd - > /dev/null
 
-  if [[ ! -f "$ENV_FILE" ]]; then
-    log_warn "Environment file not found. Creating a default $ENV_FILE."
-    log_warn "IMPORTANT: You MUST edit this file with your AWX details."
-    tee "$ENV_FILE" >/dev/null <<EOF
+  log_info "Configuring environment file at $ENV_FILE..."
+  
+  local AWX_URL=""
+  local AWX_TOKEN=""
+  
+  # Interactive prompts for critical settings
+  read -p "Enter your AWX instance URL (e.g., https://awx.example.com): " AWX_URL
+  read -sp "Enter your AWX API Token: " AWX_TOKEN
+  echo
+
+  tee "$ENV_FILE" >/dev/null <<EOF
 # --- Node.js Environment ---
 NODE_ENV=production
 PORT=4000
@@ -109,16 +128,14 @@ DB_USER=$PGUSER
 DB_PASSWORD=$PGPASSWORD
 DB_NAME=$PGDB
 
-# --- AWX Configuration (CHANGE THESE) ---
-AWX_URL=https://awx.example.com
-AWX_TOKEN=CHANGE_ME
+# --- AWX Configuration ---
+AWX_URL=${AWX_URL}
+AWX_TOKEN=${AWX_TOKEN}
 AWX_CONCURRENCY_LIMIT=20
 AWX_REQUEST_TIMEOUT=30000
 EOF
-    chmod 600 "$ENV_FILE"
-    chown root:root "$ENV_FILE"
-    log_info "Created $ENV_FILE. Please edit it now and then run 'sudo systemctl restart afe-api.service'."
-  fi
+  chmod 600 "$ENV_FILE"
+  chown root:afeapi "$ENV_FILE"
 
   log_info "Creating systemd service file at $SERVICE_FILE..."
   tee "$SERVICE_FILE" >/dev/null <<EOF
@@ -146,7 +163,6 @@ EOF
   systemctl daemon-reload
   systemctl enable --now afe-api.service
   
-  # Give the service a moment to start before checking status
   sleep 2
   systemctl status afe-api.service --no-pager
 
@@ -155,11 +171,10 @@ EOF
 
 function install_postgres() {
   log_info "Installing and configuring PostgreSQL..."
-
-  if ! command -v dnf &> /dev/null; then
-    log_error "This script requires 'dnf'. It is intended for RHEL-based systems."
-    exit 1
-  fi
+  
+  # Generate a secure password for the database user
+  local PGPASSWORD
+  PGPASSWORD=$(openssl rand -base64 16)
 
   log_info "Installing PostgreSQL 15..."
   dnf -y module enable postgresql:15
@@ -194,6 +209,8 @@ ALTER TABLE facts OWNER TO $PGUSER;
 SQL
 
   log_info "PostgreSQL installed and configured successfully."
+  # Return the generated password for use in other functions
+  echo "$PGPASSWORD"
 }
 
 function configure_nginx() {
@@ -230,10 +247,69 @@ server {
     }
 }
 EOF
+  
+  if systemctl is-active --quiet firewalld; then
+    log_info "Firewalld is active. Adding rule for HTTP traffic..."
+    firewall-cmd --permanent --add-service=http
+    firewall-cmd --reload
+  fi
 
   log_info "Testing and reloading Nginx configuration..."
   nginx -t && systemctl reload nginx
   log_info "Nginx configured with frontend at $FRONTEND_DIR and backend proxy."
+}
+
+function uninstall_app() {
+    log_warn "This will permanently delete the AFE application and its data."
+    read -p "Are you sure you want to continue? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Uninstall cancelled."
+        exit 0
+    fi
+
+    log_info "Stopping and disabling services..."
+    systemctl stop afe-api.service nginx || true
+    systemctl disable afe-api.service || true
+
+    log_info "Removing files and directories..."
+    rm -f "$SERVICE_FILE"
+    rm -f "$NGINX_CONF"
+    rm -f "$ENV_FILE"
+    rm -rf "$FRONTEND_DIR"
+    rm -rf "$BACKEND_DIR"
+
+    log_info "Reloading systemd daemon..."
+    systemctl daemon-reload
+    
+    if systemctl is-active --quiet firewalld; then
+        log_info "Removing firewall rule for HTTP..."
+        firewall-cmd --permanent --remove-service=http
+        firewall-cmd --reload
+    fi
+
+    read -p "Do you also want to remove the PostgreSQL user and database? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Dropping database '$PGDB' and user '$PGUSER'..."
+        sudo -u postgres psql -c "DROP DATABASE IF EXISTS $PGDB;"
+        sudo -u postgres psql -c "DROP ROLE IF EXISTS $PGUSER;"
+    else
+        log_warn "PostgreSQL data was not removed."
+    fi
+
+    log_info "Uninstall complete."
+}
+
+function show_status() {
+    log_info "Checking status of AFE services..."
+    echo "--- Nginx Status ---"
+    systemctl status nginx --no-pager
+    echo
+    echo "--- AFE API Backend Status ---"
+    systemctl status afe-api.service --no-pager
+    echo
+    log_info "To check PostgreSQL, run: sudo systemctl status postgresql"
 }
 
 ### MAIN SCRIPT LOGIC ###
@@ -243,21 +319,45 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 [frontend|backend|postgres|nginx|all]"
-  echo "  frontend:  Deploys the React frontend."
-  echo "  backend:   Deploys the Node.js backend service."
+  echo "Usage: $0 [frontend|backend|postgres|nginx|all|uninstall|status]"
+  echo "  all:       Runs postgres, nginx, and backend installers."
+  echo "  frontend:  Builds and deploys the React frontend."
+  echo "  backend:   Deploys the Node.js backend service (requires DB password)."
   echo "  postgres:  Installs and configures PostgreSQL."
   echo "  nginx:     Installs and configures Nginx."
-  echo "  all:       Runs postgres, nginx, and backend installers."
+  echo "  uninstall: Removes all AFE components from the system."
+  echo "  status:    Checks the status of AFE services."
   exit 1
 fi
 
+run_checks
+
 case "$1" in
+  all)
+    log_info "Running 'all' tasks: postgres, nginx, backend..."
+    GENERATED_PGPASSWORD=$(install_postgres)
+    configure_nginx
+    deploy_backend "$GENERATED_PGPASSWORD"
+    
+    echo -e "\n\033[1;32m========================= INSTALLATION SUMMARY ========================="
+    log_info "All backend services deployed successfully."
+    log_info "Database User:      $PGUSER"
+    log_info "Database Name:        $PGDB"
+    log_warn "Generated DB Password: $GENERATED_PGPASSWORD (Please save this password securely!)"
+    log_info "Frontend Location:    $FRONTEND_DIR"
+    log_info "Backend Location:     $BACKEND_DIR"
+    log_info "Environment File:     $ENV_FILE"
+    log_info "Next Step: Remember to build and deploy the frontend using:"
+    log_info "sudo $0 frontend"
+    echo -e "\033[1;32m======================================================================\033[0m"
+    ;;
   frontend)
     deploy_frontend
     ;;
   backend)
-    deploy_backend
+    log_error "The 'backend' command cannot be run standalone due to password generation."
+    log_error "Please use the 'all' command to install the full backend stack."
+    exit 1
     ;;
   postgres)
     install_postgres
@@ -265,16 +365,15 @@ case "$1" in
   nginx)
     configure_nginx
     ;;
-  all)
-    log_info "Running 'all' tasks: postgres, nginx, backend..."
-    install_postgres
-    configure_nginx
-    deploy_backend
-    log_info "All backend services deployed. Remember to deploy the frontend separately."
+  uninstall)
+    uninstall_app
+    ;;
+  status)
+    show_status
     ;;
   *)
     log_error "Invalid option: $1"
-    echo "Usage: $0 [frontend|backend|postgres|nginx|all]"
+    echo "Usage: $0 [frontend|backend|postgres|nginx|all|uninstall|status]"
     exit 1
     ;;
 esac
