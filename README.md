@@ -127,56 +127,91 @@ The PostgreSQL database acts as a high-performance cache. It's designed to be po
 
 ## 🚀 Getting Started: Installation & Setup
 
-The application is designed to run in a standalone environment. To use it with your own data, you must configure the backend server.
+This guide provides detailed instructions for setting up and running the Ansible Facts Explorer application, which consists of a React frontend and a Node.js backend.
+
+### Project Structure Overview
+
+The repository is structured as a monorepo for convenience:
+
+-   `/` (root): Contains the React frontend application files (`index.html`, `index.tsx`, `components/`, etc.).
+-   `/fact-api-backend/`: Contains the Node.js backend server, which securely connects to data sources like AWX and PostgreSQL.
+
+The frontend and backend are separate applications. The frontend runs in the user's browser, and the backend runs on a server. They communicate via a REST API. For ease of development, you can run them on the same machine.
 
 ### Prerequisites
 
--   Node.js and npm (for the backend)
--   Access to an Ansible AWX instance and/or a PostgreSQL server (depending on your chosen data sources)
+-   **Node.js & npm**: Required to run the backend server.
+-   **Data Source**: You'll need access to at least one of the following:
+    -   An Ansible AWX instance with an API token.
+    -   A PostgreSQL server with a database populated with facts.
+-   **Web Server (Recommended)**: A web server like **Nginx** is recommended for a production-like setup to serve the frontend files and proxy API requests.
 
-### 1. Configure and Run the Backend
+---
 
-The backend is responsible for all data fetching from external sources. It must be configured using **environment variables** for security and flexibility.
+### Step 1: Backend Setup
+
+The backend is the data hub. It must be configured and running before the frontend can fetch any data (other than the demo data).
 
 1.  **Navigate to the backend directory:**
     ```bash
     cd fact-api-backend/
     ```
+
 2.  **Install dependencies:**
     ```bash
     npm install
     ```
-3.  **Set Environment Variables**:
-    Create a `.env` file in the `fact-api-backend/` directory or export these variables in your shell.
 
-    -   **For the "Live AWX" source:**
-        -   `AWX_URL`: The base URL of your Ansible AWX/Tower instance (e.g., `https://awx.example.com`).
-        -   `AWX_TOKEN`: Your AWX OAuth2 application token.
-        -   `AWX_CONCURRENCY_LIMIT`: The number of concurrent requests to make to the AWX API when fetching facts. Defaults to `20`.
-    -   **For the "Cached DB" source:**
-        -   `DB_HOST`: The hostname of your PostgreSQL server.
-        -   `DB_PORT`: The port number for your PostgreSQL server (default: `5432`).
-        -   `DB_USER`: The PostgreSQL user to connect as.
-        -   `DB_PASSWORD`: The password for the PostgreSQL user.
-        -   `DB_NAME`: The database name to connect to (default: `awx_facts`).
-    -   **To enable HTTPS on the backend server (optional):**
-        -   `SSL_CERT_PATH`: Path to your SSL certificate (e.g., `fullchain.pem`).
-        -   `SSL_KEY_PATH`: Path to your SSL private key (e.g., `privkey.pem`).
-        -   `SSL_CA_PATH`: Path to your Certificate Authority (CA) bundle.
+3.  **Configure Environment Variables**:
+    Create a file named `.env` in the `fact-api-backend/` directory. This file will store your secret credentials. **Do not commit this file to version control.**
 
-4.  **Start the backend server:**
+    Copy and paste the following template into your `.env` file and fill in the values for the data sources you intend to use.
+
+    ```dotenv
+    # --- For the "Live AWX" source ---
+    # Base URL of your Ansible AWX/Tower instance
+    AWX_URL=https://awx.example.com
+    # Your AWX OAuth2 application token
+    AWX_TOKEN=YOUR_SECRET_AWX_TOKEN
+    # Number of concurrent requests to the AWX API. Default is 20.
+    AWX_CONCURRENCY_LIMIT=20
+
+    # --- For the "Cached DB" source ---
+    # Hostname of your PostgreSQL server
+    DB_HOST=localhost
+    # Port for your PostgreSQL server
+    DB_PORT=5432
+    # PostgreSQL username
+    DB_USER=postgres
+    # PostgreSQL password
+    DB_PASSWORD=YOUR_DB_PASSWORD
+    # Database name
+    DB_NAME=awx_facts
+
+    # --- To enable HTTPS on the backend server (optional) ---
+    # Path to your SSL certificate (e.g., fullchain.pem)
+    # SSL_CERT_PATH=
+    # Path to your SSL private key (e.g., privkey.pem)
+    # SSL_KEY_PATH=
+    # Path to your Certificate Authority (CA) bundle
+    # SSL_CA_PATH=
+    ```
+    *Note: If you don't use a source, you can leave its variables blank, but the application will show that source as "not configured".*
+
+4.  **Start the Backend Server:**
     ```bash
     npm start
     ```
-5.  The server will run on `http://localhost:4000` (or `https://localhost:4000` if SSL is configured).
+    If successful, you will see a message like: `Backend server listening at http://localhost:4000`. The server is now ready to accept API requests from the frontend.
 
-### 2. Database Schema (for "Cached DB" source)
+---
 
-If you plan to use the PostgreSQL data source, your database needs a `facts` table with the correct schema.
+### Step 2: Database Schema (for "Cached DB" source)
 
-1.  Ensure you have PostgreSQL installed and running.
-2.  Create a database (e.g., `awx_facts`).
-3.  Create the table. The `modified_at` column is crucial for tracking data freshness.
+If you are using the PostgreSQL data source, you must create the necessary table.
+
+1.  Connect to your PostgreSQL instance and create a database (e.g., `awx_facts`).
+2.  Execute the following SQL command to create the `facts` table. The `modified_at` column is crucial for tracking data freshness.
     ```sql
     CREATE TABLE facts (
         id SERIAL PRIMARY KEY,
@@ -186,16 +221,77 @@ If you plan to use the PostgreSQL data source, your database needs a `facts` tab
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     ```
-4.  Populate this table with your host facts. The `data` column should contain the JSON object of facts, and `modified_at` should store the timestamp of when those facts were gathered.
+3.  Populate this table with your host facts. See the **Data Population Strategy** section for more details.
 
-### 3. Running the Frontend
+---
 
-The frontend is fully static.
+### Step 3: Frontend Setup
 
-1.  Open the `index.html` file in the project's root path directly in your browser.
-2.  The frontend is pre-configured to communicate with the backend at `localhost:4000`.
+The frontend is a static application that needs to be served to the user's browser. There are two primary ways to run it.
 
-> **Note**: If you have enabled HTTPS on the backend, you will likely need to serve the frontend files from a web server that also uses HTTPS to avoid "mixed content" errors in the browser.
+#### Option A: Simple Local Testing (Quickest)
+
+For quick, simple testing *without* a web server, you can use a basic local development server.
+
+1.  Make sure you are in the project's root directory.
+2.  If you have Python installed, you can run a simple server:
+    ```bash
+    # For Python 3
+    python -m http.server 8000
+    ```
+3.  Open your browser and navigate to `http://localhost:8000`.
+
+*Note: Simply opening the `index.html` file directly (`file:///...`) may not work due to browser security restrictions on API requests.*
+
+#### Option B: Production-like Setup with Nginx (Recommended)
+
+Using a web server like Nginx is the most robust method. It correctly serves the static files and proxies API calls to the backend, avoiding common browser security issues like CORS or Mixed Content errors.
+
+1.  **Install Nginx**: If you don't have it, install Nginx on your system.
+
+2.  **Configure Nginx**: Create a new configuration file for your application (e.g., `/etc/nginx/sites-available/ansible-facts-explorer`). Paste the following configuration, adjusting paths and server names as needed.
+
+    ```nginx
+    server {
+        listen 80;
+        server_name your-domain.com localhost; # Or your server's IP
+
+        # Path to your frontend files
+        root /path/to/your/ansible-facts-explorer-project;
+        index index.html;
+
+        # Standard location block to serve static files
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # API Proxy:
+        # This is the crucial part. It forwards any request starting with /api/
+        # to your backend server running on port 4000.
+        location /api/ {
+            proxy_pass http://localhost:4000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+    ```
+    -   Replace `/path/to/your/ansible-facts-explorer-project` with the absolute path to the project's root directory.
+
+3.  **Enable the Site and Restart Nginx**:
+    ```bash
+    # Create a symbolic link to enable the site
+    sudo ln -s /etc/nginx/sites-available/ansible-facts-explorer /etc/nginx/sites-enabled/
+
+    # Test the configuration for syntax errors
+    sudo nginx -t
+
+    # If the test is successful, restart Nginx to apply the changes
+    sudo systemctl restart nginx
+    ```
+
+4.  **Access the Application**: Open your browser and navigate to `http://localhost` (or the server name you configured). Nginx will now serve the frontend, and any data-fetching requests will be correctly routed to your backend.
 
 ## 📖 User Guide: How to Use the App
 
@@ -240,29 +336,6 @@ The frontend is fully static.
 
 -   **"Mixed Content" error in browser**:
     -   This occurs when you try to connect to an `https` backend from an `http`-served frontend. To fix this, you must serve the frontend files (`index.html`, etc.) from a local web server that also uses HTTPS.
-
-## 📁 Project Structure
-
-```
-.
-├── components/          # React UI components
-│   ├── FactBrowser.tsx    # Main application component
-│   ├── FactTable.tsx      # Virtualized list view table
-│   ├── PivotedFactTable.tsx # Virtualized pivot view table
-│   ├── Dashboard.tsx      # Dashboard with stats and charts
-│   ├── FactFilter.tsx     # Panel for showing/hiding facts (columns)
-│   └── ...              # Other UI elements (buttons, icons, etc.)
-├── services/            # Frontend data fetching logic
-│   ├── apiService.ts      # Logic for calling the backend API
-│   └── demoService.ts     # Logic for loading static demo data
-├── fact-api-backend/    # Node.js/Express backend for DB and AWX sources
-│   └── server.js        # The backend server file
-├── styles/              # UI-related configuration
-│   └── densityTheme.ts  # Theme definitions for UI density
-├── App.tsx              # Root React component
-├── index.html           # Main HTML file
-└── ...
-```
 
 ##  Authorship & Acknowledgements
 

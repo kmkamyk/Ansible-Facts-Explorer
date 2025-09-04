@@ -130,7 +130,6 @@ const BarChart: React.FC<{
 
 
 const Dashboard: React.FC<DashboardProps> = ({ facts, isVisible, allFactPaths, chartFactSelections, onChartFactSelectionChange }) => {
-    // FIX: Destructure chartDistributions along with stats and chartablePaths.
     const { stats, chartablePaths, chartDistributions } = useMemo(() => {
         if (facts.length === 0) {
             return {
@@ -206,7 +205,6 @@ const Dashboard: React.FC<DashboardProps> = ({ facts, isVisible, allFactPaths, c
                     <BarChart
                         key={index}
                         title={`Distribution of "${selection || 'Not Selected'}"`}
-                        // FIX: Access chartDistributions directly, not as a property of stats.
                         data={chartDistributions[index] || []}
                         color={chartColors[index % chartColors.length]}
                         allFactPaths={chartablePaths}
