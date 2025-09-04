@@ -125,9 +125,76 @@ The PostgreSQL database acts as a high-performance cache. It's designed to be po
   - **Database Driver**: `pg` (node-postgres)
   - **Middleware**: `cors` for handling cross-origin requests.
 
-## 🚀 Getting Started: Installation & Setup
+## ⚙️ Automated Installation (Linux)
 
-This guide provides detailed instructions for setting up and running the Ansible Facts Explorer application, which consists of a React frontend and a Node.js backend.
+For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), an automated installation script is provided to streamline the setup of Nginx, PostgreSQL, and the application backend.
+
+**Disclaimer**: This script will install packages and create system users and services. Please review the script's contents to understand the changes it will make to your system.
+
+### Prerequisites for the Script
+
+-   A RHEL-based Linux distribution with `dnf`.
+-   `sudo` privileges.
+-   `git` to clone the repository.
+-   `npm` (Node.js) is required for building the frontend. The script itself uses it for backend dependencies.
+
+### How to Use the Script
+
+1.  **Clone the repository and navigate into it:**
+    ```bash
+    git clone https://github.com/kmkamyk/ansible-facts-explorer.git
+    cd ansible-facts-explorer
+    ```
+
+2.  **Prepare the Script:**
+    A placeholder script named `install.sh.txt` is included to avoid platform issues. You must first rename it and make it executable.
+    ```bash
+    # Rename the file (remove the .txt extension)
+    mv install.sh.txt install.sh
+
+    # Make the script executable
+    chmod +x install.sh
+    ```
+
+3.  **Run the script with `sudo` for each component:**
+    The script is designed to be run in stages. You can run them one by one or use the `all` command to set up all backend services at once.
+
+    **Option A: Recommended (All-in-one)**
+    ```bash
+    # This single command will install postgres, nginx, and the backend.
+    sudo ./install.sh all
+
+    # Then, you must build and deploy the frontend separately:
+    # (This requires npm to be installed on your machine)
+    npm install && npm run build
+    sudo ./install.sh frontend
+    ```
+
+    **Option B: Step-by-step**
+    ```bash
+    # 1. Install and configure PostgreSQL
+    sudo ./install.sh postgres
+
+    # 2. Install and configure Nginx
+    sudo ./install.sh nginx
+
+    # 3. Deploy the Node.js backend
+    sudo ./install.sh backend
+
+    # 4. Build and deploy the React frontend
+    npm install && npm run build
+    sudo ./install.sh frontend
+    ```
+    
+4.  **Post-Installation Steps:**
+    -   After running the backend deployment, you **must** edit the environment file at `/etc/afe-api.env` to add your actual `AWX_URL` and `AWX_TOKEN`.
+    -   Restart the backend service after editing the file: `sudo systemctl restart afe-api.service`.
+    -   Populate the PostgreSQL database as described in the **Data Population Strategy** section.
+
+
+## 🚀 Getting Started: Manual Installation & Setup
+
+This guide provides detailed instructions for manually setting up and running the Ansible Facts Explorer application.
 
 ### Project Structure Overview
 
@@ -140,7 +207,7 @@ The frontend and backend are separate applications. The frontend runs in the use
 
 ### Prerequisites
 
--   **Node.js & npm**: Required to run the backend server.
+-   **Node.js & npm**: Required to run the backend server and build the frontend.
 -   **Data Source**: You'll need access to at least one of the following:
     -   An Ansible AWX instance with an API token.
     -   A PostgreSQL server with a database populated with facts.
