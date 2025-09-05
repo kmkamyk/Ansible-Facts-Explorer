@@ -1,8 +1,10 @@
 import { AllHostFacts } from '../types';
 
-// Use the same protocol as the frontend is served with. This allows for both HTTP and HTTPS deployments.
-const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
-const API_BASE_URL = `${protocol}://localhost:4000/api`;
+// The API base URL is now a relative path.
+// This allows the frontend to make API calls to the same host it was served from,
+// which is then handled by the Nginx reverse proxy.
+// This avoids CORS issues and hardcoding URLs.
+const API_BASE_URL = '/api';
 
 interface ServiceStatus {
   awx: { configured: boolean };

@@ -2,27 +2,35 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v2.5 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v3.0 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
-# - A dedicated PostgreSQL database with a randomly generated password.
-# - The Node.js API backend as a systemd service with interactive setup.
-# - An Nginx reverse proxy with automated firewall and port conflict resolution.
-# - Fixes for common permissions and SELinux issues (403 Forbidden).
+# - A dedicated PostgreSQL database with a pre-defined password.
+# - The Node.js API backend as a systemd service with static configuration.
+# - An Nginx reverse proxy configured for HTTPS with self-signed certificates.
+# - Automatic generation of SSL certificates for secure communication.
 # - Full uninstall capability for clean removal.
 #
 # See README.md for detailed usage instructions.
 # ==============================================================================
 
 # --- Configuration Variables ---
+# --- !!! IMPORTANT !!! ---
+# --- Review and update these values before running the script. ---
+PGPASSWORD="afe_strong_password_123!" # CHANGE THIS for a secure production deployment
+AWX_URL="https://awx.example.com"
+AWX_TOKEN="YOUR_SECRET_AWX_TOKEN"
+# --- End of user configuration ---
+
 FRONTEND_DIR="/app/afe"
 BACKEND_DIR="/data/afe-api"
 PGDATA="/var/lib/pgsql/15/data" # Default for RHEL/PostgreSQL 15 module
 PGUSER="afeuser"
 PGDB="afedb"
-ENV_FILE="/etc/afe-api.env"
 SERVICE_FILE="/etc/systemd/system/afe-api.service"
 NGINX_CONF="/etc/nginx/conf.d/afe.conf"
+SSL_KEY="/etc/ssl/private/afe.key"
+SSL_CERT="/etc/ssl/certs/afe.crt"
 
 # --- Helper Functions for Logging ---
 log_info() {
@@ -37,21 +45,10 @@ log_error() {
   echo -e "\033[0;31m[ERROR]\033[0m $1" >&2
 }
 
-# --- Utility Functions ---
-function get_available_port() {
-  local port=80
-  # Use ss to check if port 80 is actively listening. The regex ensures we don't match '8080'.
-  if ss -tln | grep -qP ':(80)\s'; then
-      port=8080
-      log_warn "Port 80 is already in use. AFE will be configured on port 8080."
-  fi
-  echo "$port"
-}
-
 # --- Pre-flight Checks ---
 function run_checks() {
     log_info "Running pre-flight checks..."
-    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss" "sestatus" "chcon")
+    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss" "sestatus" "chcon" "openssl")
     local missing_deps=0
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
@@ -66,6 +63,20 @@ function run_checks() {
 }
 
 # --- Installation Functions ---
+function generate_ssl_certs() {
+  log_info "Checking for SSL certificates..."
+  if [[ -f "$SSL_KEY" && -f "$SSL_CERT" ]]; then
+    log_info "SSL certificates already exist. Skipping generation."
+  else
+    log_warn "SSL certificates not found. Generating self-signed certificates..."
+    mkdir -p /etc/ssl/certs /etc/ssl/private
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout "$SSL_KEY" \
+      -out "$SSL_CERT" \
+      -subj "/CN=localhost"
+    log_info "Self-signed certificates generated."
+  fi
+}
 
 function deploy_frontend() {
   log_info "Deploying AFE frontend..."
@@ -77,11 +88,9 @@ function deploy_frontend() {
   fi
   
   log_info "Syncing built files from 'dist/' to $FRONTEND_DIR..."
-  # The directory should already be created by the 'nginx' or 'all' step
   rsync -a --delete dist/ "$FRONTEND_DIR/"
   chown -R nginx:nginx "$FRONTEND_DIR"
 
-  # Re-apply SELinux context after copying new files to prevent 403 errors
   if sestatus | grep -q "Current mode:.*enforcing"; then
     log_info "SELinux is enforcing. Re-applying 'httpd_sys_content_t' context to new frontend files..."
     chcon -R -t httpd_sys_content_t "$FRONTEND_DIR" || log_warn "Failed to set SELinux context."
@@ -98,9 +107,6 @@ function deploy_frontend() {
 function deploy_backend() {
   log_info "Deploying AFE backend..."
   
-  local PGPASSWORD=$1
-
-  # Create a non-login system user for the service
   if ! id "afeapi" &>/dev/null; then
     log_info "Creating system user 'afeapi'..."
     useradd -r -s /usr/sbin/nologin afeapi
@@ -116,40 +122,37 @@ function deploy_backend() {
   chown -R afeapi:afeapi "$BACKEND_DIR"
 
   log_info "Installing backend dependencies as user 'afeapi'..."
-  # Use 'npm install' as it's more robust than 'npm ci' for this scenario.
-  # Explicitly set cache dir to avoid permission errors with system users that have no home dir.
   sudo -u afeapi npm install --prefix "$BACKEND_DIR" --cache "$BACKEND_DIR/.npm-cache" --no-audit --omit=dev
 
-  log_info "Configuring environment file at $ENV_FILE..."
-  
-  local AWX_URL=""
-  local AWX_TOKEN=""
-  
-  # Interactive prompts for critical settings
-  read -p "Enter your AWX instance URL (e.g., https://awx.example.com): " AWX_URL
-  read -sp "Enter your AWX API Token: " AWX_TOKEN
-  echo
+  log_info "Creating backend configuration file at $BACKEND_DIR/config.js..."
+  # This overwrites the development config.js that was copied.
+  tee "$BACKEND_DIR/config.js" >/dev/null <<EOF
+// config.js - This file is auto-generated by the install.sh script.
+// It contains the production configuration for the AFE backend.
 
-  tee "$ENV_FILE" >/dev/null <<EOF
-# --- Node.js Environment ---
-NODE_ENV=production
-PORT=4000
-
-# --- Database Configuration ---
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=$PGUSER
-DB_PASSWORD=$PGPASSWORD
-DB_NAME=$PGDB
-
-# --- AWX Configuration ---
-AWX_URL=${AWX_URL}
-AWX_TOKEN=${AWX_TOKEN}
-AWX_CONCURRENCY_LIMIT=20
-AWX_REQUEST_TIMEOUT=30000
+module.exports = {
+  dbConfig: {
+    host: 'localhost',
+    port: 5432,
+    user: '$PGUSER',
+    password: '$PGPASSWORD',
+    database: '$PGDB',
+  },
+  awxConfig: {
+    url: '$AWX_URL',
+    token: '$AWX_TOKEN',
+    concurrencyLimit: 20,
+    requestTimeout: 30000,
+  },
+  sslConfig: {
+    keyPath: '$SSL_KEY',
+    certPath: '$SSL_CERT',
+    caPath: '', // CA path is optional
+  },
+};
 EOF
-  chmod 600 "$ENV_FILE"
-  chown root:afeapi "$ENV_FILE"
+  chown afeapi:afeapi "$BACKEND_DIR/config.js"
+  chmod 640 "$BACKEND_DIR/config.js"
 
   log_info "Creating systemd service file at $SERVICE_FILE..."
   tee "$SERVICE_FILE" >/dev/null <<EOF
@@ -163,7 +166,7 @@ Type=simple
 User=afeapi
 Group=afeapi
 WorkingDirectory=$BACKEND_DIR
-EnvironmentFile=$ENV_FILE
+# Configuration is loaded from $BACKEND_DIR/config.js by the application
 ExecStart=/usr/bin/node $BACKEND_DIR/server.js
 Restart=on-failure
 RestartSec=10
@@ -180,16 +183,12 @@ EOF
   sleep 2
   systemctl status afe-api.service --no-pager
 
-  log_info "Backend deployed to $BACKEND_DIR and running on port 4000."
+  log_info "Backend deployed to $BACKEND_DIR and running on port 4000 (HTTPS)."
 }
 
 function install_postgres() {
   log_info "Installing and configuring PostgreSQL..."
   
-  # Generate a secure password for the database user
-  local PGPASSWORD
-  PGPASSWORD=$(openssl rand -base64 16)
-
   log_info "Installing PostgreSQL 15..."
   dnf -y module enable postgresql:15
   dnf install -y postgresql-server postgresql
@@ -205,7 +204,6 @@ function install_postgres() {
   systemctl enable --now postgresql
 
   log_info "Configuring database '$PGDB' and user '$PGUSER'..."
-  # Use `sudo -i -u` to ensure commands run in the postgres user's home directory context
   sudo -i -u postgres -- psql -c "SELECT 1 FROM pg_roles WHERE rolname='$PGUSER'" | grep -q 1 || sudo -i -u postgres -- psql -c "CREATE ROLE $PGUSER WITH LOGIN PASSWORD '$PGPASSWORD';"
   sudo -i -u postgres -- psql -lqt | cut -d \| -f 1 | grep -qw "$PGDB" || sudo -i -u postgres -- psql -c "CREATE DATABASE $PGDB OWNER $PGUSER;"
   
@@ -224,117 +222,82 @@ ALTER TABLE facts OWNER TO $PGUSER;
 SQL
 
   log_info "PostgreSQL installed and configured successfully."
-  # Return the generated password for use in other functions
-  echo "$PGPASSWORD"
 }
 
 function configure_nginx() {
-  log_info "Installing and configuring Nginx..."
-  
-  local NGINX_PORT=$1
+  log_info "Installing and configuring Nginx for HTTPS..."
 
   dnf install -y nginx
   systemctl enable --now nginx
 
-  # --- CRITICAL FIX 1: Disable default site in conf.d ---
   if [[ -f /etc/nginx/conf.d/default.conf ]]; then
-    log_warn "Found default Nginx configuration in conf.d. Renaming to 'default.conf.bak' to prevent conflicts."
+    log_warn "Found default Nginx configuration in conf.d. Renaming to 'default.conf.bak'."
     mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak
   fi
 
-  # --- CRITICAL FIX 2: Disable default server block in nginx.conf for newer systems ---
-  # Check if the default welcome page is configured and active inside the main config file
   if grep -qP '^\s*root\s+/usr/share/nginx/html;' /etc/nginx/nginx.conf; then
-      log_warn "Found active default server block in /etc/nginx/nginx.conf. Attempting to disable it."
-      local root_line_num start_line end_line end_line_relative
-      
-      # Find the line number of the specific root directive that identifies the default server block
-      root_line_num=$(grep -n "/usr/share/nginx/html" /etc/nginx/nginx.conf | head -n1 | cut -d: -f1)
-      
-      if [[ -n "$root_line_num" ]]; then
-          # Find the line number of the 'server {' that BEGINS the block containing our root directive
-          start_line=$(head -n "$root_line_num" /etc/nginx/nginx.conf | grep -n "^\s*server\s*{" | tail -n1 | cut -d: -f1)
-          # Find the relative line number of the '}' that ENDS the block
-          end_line_relative=$(tail -n +$start_line /etc/nginx/nginx.conf | grep -n "^\s*}" | head -n1 | cut -d: -f1)
-          
-          if [[ -n "$start_line" && -n "$end_line_relative" ]]; then
-              # Convert the relative end line number to an absolute one
-              end_line=$((start_line + end_line_relative - 1))
-              
-              if [[ "$end_line" -ge "$start_line" ]]; then
-                  log_info "Commenting out default server block from line $start_line to $end_line."
-                  sed -i.bak "$start_line,${end_line}s/^/#/" /etc/nginx/nginx.conf
-                  log_info "A backup of nginx.conf was created at /etc/nginx/nginx.conf.bak"
-              else
-                  log_warn "Could not reliably determine the end of the server block. Skipping automatic commenting."
-              fi
-          else
-              log_warn "Could not reliably determine the boundaries of the default server block. Skipping."
-              log_warn "You may need to manually comment out the default server block in /etc/nginx/nginx.conf."
-          fi
-      fi
+      log_warn "Found active default server block in /etc/nginx/nginx.conf. Backing up and disabling."
+      sed -i.bak '/^\s*server\s*{/,/^\s*}/ s/^\(.*\)$/#\1/' /etc/nginx/nginx.conf
   fi
 
-  # Create the webroot directory *before* configuring Nginx to use it.
   log_info "Ensuring frontend directory exists at $FRONTEND_DIR..."
   mkdir -p "$FRONTEND_DIR"
   chown nginx:nginx "$FRONTEND_DIR"
 
-  # --- CRITICAL FIX 3: Set correct permissions and SELinux context to prevent 403 Forbidden ---
-  # The Nginx user needs execute permission on all parent directories.
-  # /app is the parent, and might have been created with restrictive permissions by root.
-  log_info "Setting correct traversal permissions for /app directory..."
+  log_info "Setting correct traversal permissions and SELinux context..."
   chmod 755 /app
-
-  # If SELinux is enforcing, Nginx cannot read files without the correct context.
   if sestatus | grep -q "Current mode:.*enforcing"; then
-    log_info "SELinux is enforcing. Applying 'httpd_sys_content_t' context to $FRONTEND_DIR..."
-    # 'chcon' applies the context now. For persistence across reboots, 'semanage' would be needed,
-    # but chcon is sufficient for this script's scope and more universally available.
-    chcon -R -t httpd_sys_content_t "$FRONTEND_DIR" || log_warn "Failed to set SELinux context. This may cause 403 errors."
+    chcon -R -t httpd_sys_content_t "$FRONTEND_DIR" || log_warn "Failed to set SELinux context."
   fi
 
-  log_info "Creating Nginx configuration at $NGINX_CONF for port ${NGINX_PORT}..."
+  log_info "Creating Nginx configuration at $NGINX_CONF for HTTPS..."
   tee "$NGINX_CONF" >/dev/null <<EOF
+# Redirect all HTTP traffic to HTTPS
 server {
-    # Make this the default server for this port to avoid conflicts
-    listen ${NGINX_PORT} default_server;
-    server_name _; # Listens on all hostnames
+    listen 80 default_server;
+    server_name _;
+    return 301 https://\$host\$request_uri;
+}
+
+# Main HTTPS server block
+server {
+    listen 443 ssl http2 default_server;
+    server_name _;
+
+    # SSL Configuration (uses self-signed certs generated by this script)
+    ssl_certificate $SSL_CERT;
+    ssl_certificate_key $SSL_KEY;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
 
     root $FRONTEND_DIR;
     index index.html;
 
-    # Serve static files for the React app
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # Proxy API requests to the backend Node.js server
+    # Proxy API requests to the secure backend Node.js server
     location /api/ {
-        # The trailing slash on the location but NOT on the proxy_pass
-        # ensures that a request to /api/facts is forwarded as /api/facts.
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_pass https://127.0.0.1:4000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
     }
 }
 EOF
   
   if systemctl is-active --quiet firewalld; then
-    log_info "Firewalld is active. Adding rule for port ${NGINX_PORT}/tcp..."
-    firewall-cmd --permanent --add-port=${NGINX_PORT}/tcp
+    log_info "Firewalld is active. Adding rules for HTTP and HTTPS services..."
+    firewall-cmd --permanent --add-service=http
+    firewall-cmd --permanent --add-service=https
     firewall-cmd --reload
   fi
 
   log_info "Testing and reloading Nginx configuration..."
   nginx -t && systemctl reload nginx
-  log_info "Nginx configured with frontend at $FRONTEND_DIR, backend proxy, and listening on port ${NGINX_PORT}."
+  log_info "Nginx configured for HTTPS on port 443."
 }
 
 function uninstall_app() {
@@ -347,44 +310,69 @@ function uninstall_app() {
     fi
 
     log_info "Stopping and disabling services..."
-    systemctl stop afe-api.service nginx || true
-    systemctl disable afe-api.service || true
+    systemctl stop afe-api.service nginx || log_warn "Could not stop afe-api or nginx services (they may not be running)."
+    systemctl disable afe-api.service || log_warn "Could not disable afe-api.service."
 
     if systemctl is-active --quiet firewalld; then
-        local NGINX_PORT
-        if [[ -f "$NGINX_CONF" ]]; then
-            # Reliably determine the port from the config file before deleting it
-            NGINX_PORT=$(grep -oP 'listen\s+\K[0-9]+' "$NGINX_CONF" || echo "80")
-            log_info "Removing firewall rule for port ${NGINX_PORT}/tcp..."
-            if firewall-cmd --query-port=${NGINX_PORT}/tcp --permanent; then
-                firewall-cmd --permanent --remove-port=${NGINX_PORT}/tcp
-                firewall-cmd --reload
-            else
-                log_warn "Firewall rule for port ${NGINX_PORT}/tcp not found. Skipping."
-            fi
-        else
-             log_warn "Nginx config not found. Could not determine port to remove from firewall."
-        fi
+        log_info "Removing firewall rules for HTTP and HTTPS..."
+        firewall-cmd --permanent --remove-service=http >/dev/null 2>&1 || true
+        firewall-cmd --permanent --remove-service=https >/dev/null 2>&1 || true
+        firewall-cmd --reload
     fi
 
-    log_info "Removing files and directories..."
-    rm -f "$SERVICE_FILE"
-    rm -f "$NGINX_CONF"
-    rm -f "$ENV_FILE"
-    rm -rf "$FRONTEND_DIR"
-    rm -rf "$BACKEND_DIR"
+    log_info "Removing application files and directories..."
+    rm -f "$SERVICE_FILE" "$NGINX_CONF" "$SSL_KEY" "$SSL_CERT"
+    rm -rf "$FRONTEND_DIR" "$BACKEND_DIR"
+    
+    if [[ -f /etc/nginx/conf.d/default.conf.bak ]]; then
+      log_info "Restoring default Nginx conf.d configuration..."
+      mv /etc/nginx/conf.d/default.conf.bak /etc/nginx/conf.d/default.conf
+    fi
+    if [[ -f /etc/nginx/nginx.conf.bak ]]; then
+      log_info "Restoring main Nginx configuration..."
+      mv /etc/nginx/nginx.conf.bak /etc/nginx/nginx.conf
+    fi
 
-    log_info "Reloading systemd daemon..."
+    log_info "Removing system user 'afeapi'..."
+    if id "afeapi" &>/dev/null; then
+        userdel afeapi
+        log_info "User 'afeapi' removed."
+    else
+        log_warn "User 'afeapi' not found."
+    fi
+
+    log_info "Reloading systemd daemon and nginx..."
     systemctl daemon-reload
+    nginx -t && systemctl reload nginx || log_warn "Nginx could not be reloaded. A restart may be required."
 
     read -p "Do you also want to remove the PostgreSQL user and database? [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log_info "Dropping database '$PGDB' and user '$PGUSER'..."
-        sudo -i -u postgres -- psql -c "DROP DATABASE IF EXISTS $PGDB;"
-        sudo -i -u postgres -- psql -c "DROP ROLE IF EXISTS $PGUSER;"
+        if systemctl is-active --quiet postgresql; then
+            sudo -i -u postgres -- psql -c "DROP DATABASE IF EXISTS $PGDB;" || log_warn "Failed to drop database '$PGDB'."
+            sudo -i -u postgres -- psql -c "DROP ROLE IF EXISTS $PGUSER;" || log_warn "Failed to drop role '$PGUSER'."
+        else
+            log_warn "PostgreSQL is not running. Cannot drop database and user automatically."
+        fi
     else
-        log_warn "PostgreSQL data was not removed."
+        log_warn "PostgreSQL database and user were not removed."
+    fi
+
+    read -p "Do you want to COMPLETELY UNINSTALL PostgreSQL and DELETE all its data? This cannot be undone. [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_warn "Proceeding with complete PostgreSQL removal..."
+        log_info "Stopping and disabling PostgreSQL..."
+        systemctl stop postgresql || log_warn "PostgreSQL was not running."
+        systemctl disable postgresql || log_warn "Could not disable PostgreSQL."
+        log_info "Removing PostgreSQL packages..."
+        dnf remove -y 'postgresql*' > /dev/null
+        log_info "Deleting PostgreSQL data directory /var/lib/pgsql..."
+        rm -rf /var/lib/pgsql
+        log_warn "PostgreSQL and all its data have been removed."
+    else
+        log_warn "PostgreSQL package was not removed."
     fi
 
     log_info "Uninstall complete."
@@ -408,12 +396,11 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 [frontend|backend|postgres|nginx|all|uninstall|status]"
-  echo "  all:       Runs postgres, nginx, and backend installers."
+  echo "Usage: $0 [frontend|postgres|nginx|all|uninstall|status]"
+  echo "  all:       Installs postgres, generates certs, configures nginx & backend, and deploys the frontend."
   echo "  frontend:  Deploys the pre-built React frontend from the 'dist' directory."
-  echo "  backend:   Deploys the Node.js backend service (requires DB password)."
   echo "  postgres:  Installs and configures PostgreSQL."
-  echo "  nginx:     Installs and configures Nginx."
+  echo "  nginx:     Installs and configures Nginx for HTTPS."
   echo "  uninstall: Removes all AFE components from the system."
   echo "  status:    Checks the status of AFE services."
   exit 1
@@ -423,40 +410,41 @@ run_checks
 
 case "$1" in
   all)
-    log_info "Running 'all' tasks: postgres, nginx, backend..."
-    GENERATED_PGPASSWORD=$(install_postgres)
-    USED_NGINX_PORT=$(get_available_port)
-    configure_nginx "$USED_NGINX_PORT"
-    deploy_backend "$GENERATED_PGPASSWORD"
+    log_info "Running 'all' tasks: postgres, certs, nginx, backend, and frontend..."
+    install_postgres
+    generate_ssl_certs
+    configure_nginx
+    deploy_backend
+
+    log_info "Building frontend application..."
+    if ! (npm install && npm run build); then
+        log_error "Frontend build failed. Please check for errors in the output above."
+        log_error "You may need to resolve frontend issues and then run 'sudo $0 frontend' manually."
+        exit 1
+    fi
+    log_info "Frontend build successful. Deploying..."
+    deploy_frontend
     
-    echo -e "\n\033[1;32m========================= INSTALLATION SUMMARY ========================="
-    log_info "All backend services deployed successfully."
-    log_info "Nginx Port:           $USED_NGINX_PORT (Access the app at http://<your_ip>:${USED_NGINX_PORT})"
+    echo -e "\n\033[1;32m========================= INSTALLATION COMPLETE ========================="
+    log_info "All services deployed successfully."
+    log_info "App URL:              https://<your_server_ip>"
     log_info "Database User:        $PGUSER"
-    log_info "Database Name:        $PGDB"
-    log_warn "Generated DB Password:  $GENERATED_PGPASSWORD (Please save this password securely!)"
+    log_warn "Database Password is set in the script. Remember to secure it."
+    log_warn "AWX config is set in the script. Update token as needed."
     log_info "Frontend Location:    $FRONTEND_DIR"
-    log_info "Backend Location:     $BACKEND_DIR"
-    log_info "Environment File:     $ENV_FILE"
-    log_info "Next Step: Remember to build and deploy the frontend using:"
-    log_info "  npm install && npm run build"
-    log_info "  sudo $0 frontend"
+    log_info "Backend Location:     $BACKEND_DIR/config.js is the config file."
+    log_info "You can now access the application at the URL above."
     echo -e "\033[1;32m======================================================================\033[0m"
     ;;
   frontend)
     deploy_frontend
     ;;
-  backend)
-    log_error "The 'backend' command cannot be run standalone due to password generation."
-    log_error "Please use the 'all' command to install the full backend stack."
-    exit 1
-    ;;
   postgres)
     install_postgres
     ;;
   nginx)
-    USED_NGINX_PORT=$(get_available_port)
-    configure_nginx "$USED_NGINX_PORT"
+    generate_ssl_certs # Nginx needs certs to start correctly
+    configure_nginx
     ;;
   uninstall)
     uninstall_app
@@ -466,7 +454,7 @@ case "$1" in
     ;;
   *)
     log_error "Invalid option: $1"
-    echo "Usage: $0 [frontend|backend|postgres|nginx|all|uninstall|status]"
+    echo "Usage: $0 [frontend|postgres|nginx|all|uninstall|status]"
     exit 1
     ;;
 esac
