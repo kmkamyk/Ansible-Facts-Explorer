@@ -100,80 +100,82 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
   const otherColumnHeaders = headers.slice(1);
 
   return (
-    <div
-        ref={mainContainerRef}
-        onScroll={handleMainScroll}
-        className="overflow-auto h-full [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-    >
-        <table ref={tableRef} className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 border-separate" style={{ borderSpacing: 0 }}>
-            <thead className="bg-slate-50 dark:bg-zinc-800/50 sticky top-0 z-10">
-              {/* Row for the custom scrollbar */}
-              <tr>
-                <th colSpan={headers.length} className="p-0 border-b border-slate-300 dark:border-zinc-700">
-                  <div
-                      ref={topScrollbarRef}
-                      onScroll={handleTopScroll}
-                      className="overflow-x-auto overflow-y-hidden"
-                  >
-                      <div style={{ width: `${tableWidth}px`, height: '1px' }}></div>
-                  </div>
-                </th>
-              </tr>
-              {/* Row for the actual column headers */}
-              <tr>
-                <th 
-                scope="col" 
-                onClick={() => requestSort(firstColumnHeader)} 
-                className={`sticky left-0 z-20 bg-slate-50 dark:bg-zinc-800/50 pl-4 pr-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 sm:pl-6 ${cellPadding} cursor-pointer min-w-[200px] border-r border-slate-200 dark:border-zinc-700 font-open-sans`}
-                >
-                <div className="flex items-center">{firstColumnHeader}<span className="ml-2">{renderSortArrow(firstColumnHeader)}</span></div>
-                </th>
-                {otherColumnHeaders.map((header) => (
-                <th 
-                    key={header} 
-                    scope="col" 
-                    onClick={() => requestSort(header)} 
-                    className={`group px-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 font-mono ${cellPadding} cursor-pointer min-w-[250px]`}
-                >
-                    <div className="flex items-center justify-between">
-                    <span className="truncate" title={header}>{header}</span>
-                    <div className="flex items-center">
-                        <span className="ml-2">{renderSortArrow(header)}</span>
-                        <button 
-                        onClick={(e) => handleRemoveClick(e, header)}
-                        className="ml-2 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition-opacity focus:opacity-100 outline-none"
-                        title={`Remove column: ${header}`}
-                        >
-                        <XSmallIcon />
-                        </button>
-                    </div>
-                    </div>
-                </th>
-                ))}
-            </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-            {data.map((row, rowIndex) => (
-                <tr key={row.hostname || rowIndex} className="group hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors" style={{ height: `${rowHeight}px` }}>
-                <td 
-                    onClick={() => onCellClick(row[firstColumnHeader])}
-                    className={`sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-slate-50 dark:group-hover:bg-zinc-800/50 whitespace-nowrap overflow-hidden text-ellipsis pl-4 pr-3 text-sm font-medium text-slate-800 dark:text-zinc-100 sm:pl-6 ${cellPadding} border-r border-slate-200 dark:border-zinc-700 transition-colors font-open-sans cursor-pointer`}
-                >
-                    {row[firstColumnHeader]}
-                </td>
-                {otherColumnHeaders.map(header => (
-                    <td 
-                    onClick={() => onCellClick(row[header])}
-                    key={header} 
-                    className={`whitespace-nowrap overflow-hidden text-ellipsis px-3 text-sm text-slate-500 dark:text-zinc-400 font-mono group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors ${cellPadding} cursor-pointer`}
+    <div className="h-full overflow-hidden">
+      <div
+          ref={mainContainerRef}
+          onScroll={handleMainScroll}
+          className="overflow-auto h-[calc(100%+20px)]"
+      >
+          <table ref={tableRef} className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 border-separate" style={{ borderSpacing: 0 }}>
+              <thead className="bg-slate-50 dark:bg-zinc-800/50 sticky top-0 z-10">
+                {/* Row for the custom scrollbar */}
+                <tr>
+                  <th colSpan={headers.length} className="p-0 border-b border-slate-300 dark:border-zinc-700">
+                    <div
+                        ref={topScrollbarRef}
+                        onScroll={handleTopScroll}
+                        className="overflow-x-auto overflow-y-hidden"
                     >
-                    {String(row[header] === undefined || row[header] === null ? '' : row[header])}
-                    </td>
-                ))}
+                        <div style={{ width: `${tableWidth}px`, height: '1px' }}></div>
+                    </div>
+                  </th>
                 </tr>
-            ))}
-            </tbody>
-        </table>
+                {/* Row for the actual column headers */}
+                <tr>
+                  <th 
+                  scope="col" 
+                  onClick={() => requestSort(firstColumnHeader)} 
+                  className={`sticky left-0 z-20 bg-slate-50 dark:bg-zinc-800/50 pl-4 pr-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 sm:pl-6 ${cellPadding} cursor-pointer min-w-[200px] border-r border-slate-200 dark:border-zinc-700 font-open-sans`}
+                  >
+                  <div className="flex items-center">{firstColumnHeader}<span className="ml-2">{renderSortArrow(firstColumnHeader)}</span></div>
+                  </th>
+                  {otherColumnHeaders.map((header) => (
+                  <th 
+                      key={header} 
+                      scope="col" 
+                      onClick={() => requestSort(header)} 
+                      className={`group px-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 font-mono ${cellPadding} cursor-pointer min-w-[250px]`}
+                  >
+                      <div className="flex items-center justify-between">
+                      <span className="truncate" title={header}>{header}</span>
+                      <div className="flex items-center">
+                          <span className="ml-2">{renderSortArrow(header)}</span>
+                          <button 
+                          onClick={(e) => handleRemoveClick(e, header)}
+                          className="ml-2 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition-opacity focus:opacity-100 outline-none"
+                          title={`Remove column: ${header}`}
+                          >
+                          <XSmallIcon />
+                          </button>
+                      </div>
+                      </div>
+                  </th>
+                  ))}
+              </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
+              {data.map((row, rowIndex) => (
+                  <tr key={row.hostname || rowIndex} className="group hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors" style={{ height: `${rowHeight}px` }}>
+                  <td 
+                      onClick={() => onCellClick(row[firstColumnHeader])}
+                      className={`sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-slate-50 dark:group-hover:bg-zinc-800/50 whitespace-nowrap overflow-hidden text-ellipsis pl-4 pr-3 text-sm font-medium text-slate-800 dark:text-zinc-100 sm:pl-6 ${cellPadding} border-r border-slate-200 dark:border-zinc-700 transition-colors font-open-sans cursor-pointer`}
+                  >
+                      {row[firstColumnHeader]}
+                  </td>
+                  {otherColumnHeaders.map(header => (
+                      <td 
+                      onClick={() => onCellClick(row[header])}
+                      key={header} 
+                      className={`whitespace-nowrap overflow-hidden text-ellipsis px-3 text-sm text-slate-500 dark:text-zinc-400 font-mono group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors ${cellPadding} cursor-pointer`}
+                      >
+                      {String(row[header] === undefined || row[header] === null ? '' : row[header])}
+                      </td>
+                  ))}
+                  </tr>
+              ))}
+              </tbody>
+          </table>
+      </div>
     </div>
   );
 };
