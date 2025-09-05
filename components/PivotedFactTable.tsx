@@ -229,7 +229,7 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
         <div
           ref={scrollContainerRef}
           onScroll={handleVerticalScroll}
-          className="overflow-auto flex-1"
+          className="overflow-auto flex-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           <table className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 border-separate" style={{ borderSpacing: 0 }}>
             <thead className="bg-slate-50 dark:bg-zinc-800/50 sticky top-0 z-10">
