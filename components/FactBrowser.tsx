@@ -301,19 +301,25 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     }
   }, []);
 
+  // This is the primary data filtering logic.
   const searchedFacts = useMemo(() => {
-    // Combine pills and the live search input into a single list of filters.
-    // .filter(Boolean) removes any empty strings from the list.
     const filters = [...searchPills, searchInputValue.trim()].filter(Boolean);
 
+    // If there are no filters, return all facts.
     if (filters.length === 0) {
       return allFacts;
     }
 
-    return allFacts.filter(fact => {
-      // A fact must match ALL active filters to be included.
+    // If there are filters, first find the specific fact rows that match.
+    const matchingRows = allFacts.filter(fact => {
       return filters.every(filter => matchesPill(fact, filter));
     });
+
+    // Then, get the unique hostnames from those matching rows.
+    const matchingHostnames = new Set(matchingRows.map(fact => fact.host));
+
+    // Finally, return ALL facts for those hosts to show full context.
+    return allFacts.filter(fact => matchingHostnames.has(fact.host));
   }, [allFacts, searchPills, searchInputValue]);
 
 
@@ -329,28 +335,10 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   }, [searchedFacts, visibleFactPaths, allFactPaths]);
 
   const dashboardFacts = useMemo(() => {
-    const matchingHostnames = new Set(searchedFacts.map(fact => fact.host));
-    if (searchPills.length > 0 || searchInputValue.trim() !== '') {
-      return allFacts.filter(fact => matchingHostnames.has(fact.host));
-    }
-    return allFacts;
-  }, [searchedFacts, allFacts, searchPills, searchInputValue]);
-
-  const pivotViewFilteredFacts = useMemo(() => {
-    if (viewMode !== 'pivot' || (searchPills.length === 0 && searchInputValue.trim() === '')) {
-        return filteredFacts;
-    }
-
-    const matchingHostnames = new Set(searchedFacts.map(fact => fact.host));
-    const allFactsForMatchingHosts = allFacts.filter(fact => matchingHostnames.has(fact.host));
-    
-    if (allFactPaths.length > 0 && visibleFactPaths.size === allFactPaths.length) {
-        return allFactsForMatchingHosts;
-    }
-    return allFactsForMatchingHosts.filter(fact => 
-        visibleFactPaths.has(fact.factPath) || fact.factPath === '---'
-    );
-  }, [viewMode, searchPills, searchInputValue, searchedFacts, allFacts, filteredFacts, visibleFactPaths, allFactPaths]);
+    // The dashboard should always operate on the set of hosts matching the filter.
+    // Our `searchedFacts` logic already provides this dataset.
+    return searchedFacts;
+  }, [searchedFacts]);
   
   const handleRequestSort = (key: SortableKey) => {
     let direction: SortDirection = 'ascending';
@@ -389,8 +377,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   }, [filteredFacts, sortConfig, viewMode]);
 
   const pivotedData = useMemo(() => {
-    return pivotFactsForExport(pivotViewFilteredFacts);
-  }, [pivotViewFilteredFacts]);
+    return pivotFactsForExport(filteredFacts);
+  }, [filteredFacts]);
 
   const sortedPivotedData = useMemo(() => {
     if (viewMode !== 'pivot' || !sortConfig) return pivotedData;
