@@ -14,18 +14,22 @@ interface PivotedFactTableProps {
   onCellClick: (value: string | number | boolean | null | object) => void;
 }
 
+const SCROLLBAR_HEIGHT = 16; // Corresponds to h-4 in Tailwind
+
 const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, density, sortConfig, requestSort, onRemoveFactPath, onScrollProgress, onCellClick }) => {
   const { tableRowHeight: rowHeight, tableCellPadding: cellPadding } = DENSITY_THEME[density];
   const mainContainerRef = useRef<HTMLDivElement>(null);
-  const topScrollbarRef = useRef<HTMLDivElement>(null);
+  const stickyScrollbarRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const [tableWidth, setTableWidth] = useState(0);
 
-  // Sync scrolling between the top bar and the main content
+  // Sync scrolling between the sticky bar and the main content
   const handleMainScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight, scrollLeft } = event.currentTarget;
+    const main = event.currentTarget;
+    const sticky = stickyScrollbarRef.current;
     
     // Update vertical scroll progress
+    const { scrollTop, scrollHeight, clientHeight } = main;
     const scrollableHeight = scrollHeight - clientHeight;
     if (scrollableHeight <= 0) {
       onScrollProgress(0);
@@ -34,16 +38,17 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
       onScrollProgress(progress);
     }
 
-    // Sync horizontal scroll position to the top scrollbar
-    if (topScrollbarRef.current && topScrollbarRef.current.scrollLeft !== scrollLeft) {
-      topScrollbarRef.current.scrollLeft = scrollLeft;
+    // Sync horizontal scroll position to the sticky scrollbar
+    if (sticky && sticky.scrollLeft !== main.scrollLeft) {
+      sticky.scrollLeft = main.scrollLeft;
     }
   };
 
-  const handleTopScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    const { scrollLeft } = event.currentTarget;
-    if (mainContainerRef.current && mainContainerRef.current.scrollLeft !== scrollLeft) {
-      mainContainerRef.current.scrollLeft = scrollLeft;
+  const handleStickyScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const sticky = event.currentTarget;
+    const main = mainContainerRef.current;
+    if (main && main.scrollLeft !== sticky.scrollLeft) {
+      main.scrollLeft = sticky.scrollLeft;
     }
   };
   
@@ -55,13 +60,13 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
     onScrollProgress(0);
   }, [data, onScrollProgress]);
 
-  // Use a ResizeObserver to keep the top scrollbar sizer div in sync with the table width
+  // Use a ResizeObserver to keep the sticky scrollbar sizer div in sync with the table width
   useEffect(() => {
     const tableElement = tableRef.current;
     if (!tableElement) return;
 
     const observer = new ResizeObserver(entries => {
-        // Using requestAnimationFrame to prevent "ResizeObserver loop limit exceeded" error in some cases
+        // Using requestAnimationFrame to prevent "ResizeObserver loop limit exceeded" error
         window.requestAnimationFrame(() => {
             if (entries && entries.length > 0) {
                 setTableWidth(entries[0].contentRect.width);
@@ -74,7 +79,7 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
     return () => {
       observer.disconnect();
     };
-  }, []); // Run only once on mount
+  }, []);
 
   if (data.length === 0) {
     return (
@@ -100,32 +105,21 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
   const otherColumnHeaders = headers.slice(1);
 
   return (
-    <div className="h-full overflow-hidden">
+    <div className="h-full relative overflow-hidden">
+      {/* Main scrolling container, made taller to hide its native horizontal scrollbar below the visible area */}
       <div
           ref={mainContainerRef}
           onScroll={handleMainScroll}
-          className="overflow-auto h-[calc(100%+20px)]"
+          className="overflow-auto"
+          style={{ height: `calc(100% + ${SCROLLBAR_HEIGHT}px)`, paddingBottom: `${SCROLLBAR_HEIGHT}px` }}
       >
           <table ref={tableRef} className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 border-separate" style={{ borderSpacing: 0 }}>
               <thead className="bg-slate-50 dark:bg-zinc-800/50 sticky top-0 z-10">
-                {/* Row for the custom scrollbar */}
-                <tr>
-                  <th colSpan={headers.length} className="p-0 border-b border-slate-300 dark:border-zinc-700">
-                    <div
-                        ref={topScrollbarRef}
-                        onScroll={handleTopScroll}
-                        className="overflow-x-auto overflow-y-hidden"
-                    >
-                        <div style={{ width: `${tableWidth}px`, height: '1px' }}></div>
-                    </div>
-                  </th>
-                </tr>
-                {/* Row for the actual column headers */}
                 <tr>
                   <th 
                   scope="col" 
                   onClick={() => requestSort(firstColumnHeader)} 
-                  className={`sticky left-0 z-20 bg-slate-50 dark:bg-zinc-800/50 pl-4 pr-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 sm:pl-6 ${cellPadding} cursor-pointer min-w-[200px] border-r border-slate-200 dark:border-zinc-700 font-open-sans`}
+                  className={`sticky left-0 z-20 bg-slate-50 dark:bg-zinc-800/50 pl-4 pr-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 sm:pl-6 ${cellPadding} cursor-pointer min-w-[200px] border-r border-b border-slate-200 dark:border-zinc-700 font-open-sans`}
                   >
                   <div className="flex items-center">{firstColumnHeader}<span className="ml-2">{renderSortArrow(firstColumnHeader)}</span></div>
                   </th>
@@ -134,7 +128,7 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
                       key={header} 
                       scope="col" 
                       onClick={() => requestSort(header)} 
-                      className={`group px-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 font-mono ${cellPadding} cursor-pointer min-w-[250px]`}
+                      className={`group px-3 text-left text-sm font-semibold text-slate-600 dark:text-zinc-300 font-mono ${cellPadding} cursor-pointer min-w-[250px] border-b border-slate-200 dark:border-zinc-700`}
                   >
                       <div className="flex items-center justify-between">
                       <span className="truncate" title={header}>{header}</span>
@@ -175,6 +169,17 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
               ))}
               </tbody>
           </table>
+      </div>
+
+      {/* Sticky horizontal scrollbar container */}
+      <div
+        ref={stickyScrollbarRef}
+        onScroll={handleStickyScroll}
+        className="absolute bottom-0 left-0 right-0 overflow-x-auto overflow-y-hidden bg-slate-100/80 dark:bg-zinc-900/80 backdrop-blur-sm border-t border-slate-200 dark:border-zinc-800"
+        style={{ height: `${SCROLLBAR_HEIGHT}px` }}
+      >
+          {/* Sizer div to create the correct scroll width */}
+          <div style={{ width: `${tableWidth}px`, height: '1px' }}></div>
       </div>
     </div>
   );
