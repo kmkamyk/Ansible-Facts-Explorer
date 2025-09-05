@@ -48,7 +48,7 @@ log_error() {
 # --- Pre-flight Checks ---
 function run_checks() {
     log_info "Running pre-flight checks..."
-    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss" "sestatus" "chcon" "openssl")
+    local dependencies=("dnf" "systemctl" "npm" "node" "rsync" "sudo" "ss" "sestatus" "chcon" "openssl" "setsebool")
     local missing_deps=0
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
@@ -238,9 +238,9 @@ function configure_nginx() {
     mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak
   fi
 
-  if grep -qP '^\s*root\s+/usr/share/nginx/html;' /etc/nginx/nginx.conf; then
-      log_warn "Found active default server block in /etc/nginx/nginx.conf. Backing up and disabling."
-      sed -i.bak '/^\s*server\s*{/,/^\s*}/ s/^\(.*\)$/#\1/' /etc/nginx/nginx.conf
+  if [[ -f /etc/nginx/nginx.conf.bak ]]; then
+    log_info "Restoring main Nginx configuration from backup to undo previous changes."
+    mv /etc/nginx/nginx.conf.bak /etc/nginx/nginx.conf
   fi
 
   log_info "Ensuring frontend directory exists at $FRONTEND_DIR..."
@@ -251,6 +251,8 @@ function configure_nginx() {
   chmod 755 /app
   if sestatus | grep -q "Current mode:.*enforcing"; then
     chcon -R -t httpd_sys_content_t "$FRONTEND_DIR" || log_warn "Failed to set SELinux context."
+    log_info "SELinux is enforcing. Allowing Nginx to make network connections for proxying..."
+    setsebool -P httpd_can_network_connect 1 || log_warn "Failed to set SELinux boolean 'httpd_can_network_connect'. Proxying to backend may fail."
   fi
 
   log_info "Creating Nginx configuration at $NGINX_CONF for HTTPS..."

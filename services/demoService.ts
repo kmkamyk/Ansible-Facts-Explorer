@@ -1,5 +1,5 @@
 import { AllHostFacts } from '../types';
-import demoData from '../dane.json';
+import demoData from '/dane.json';
 
 export const demoService = {
   fetchFacts: async (): Promise<AllHostFacts> => {

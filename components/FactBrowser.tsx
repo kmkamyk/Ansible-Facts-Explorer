@@ -193,8 +193,9 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [scrollProgress, setScrollProgress] = useState(0);
 
   // State for backend service availability
-  const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ awx: { configured: true }, db: { configured: true }});
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ awx: { configured: false }, db: { configured: false }});
   const [isStatusLoading, setIsStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // State for fact filtering
   const [isFactFilterVisible, setIsFactFilterVisible] = useState(false);
@@ -210,6 +211,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   useEffect(() => {
     const checkServiceStatus = async () => {
       try {
+        setStatusError(null);
         const status = await apiService.fetchStatus();
         setServiceStatus(status);
         // If current source is now unavailable, fallback to demo
@@ -218,6 +220,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         }
       } catch (e: any) {
         console.error("Failed to fetch service status:", e.message);
+        setStatusError(e.message);
         // Assume services are unavailable on error
         setServiceStatus({ awx: { configured: false }, db: { configured: false }});
         setDataSource('demo');
@@ -582,8 +585,12 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                               Demo
                             </button>
                         </div>
-                         <p className="text-slate-500 dark:text-zinc-400 text-xs w-full text-center mt-1">
-                            {loadedDataSource && !isLoading && !error ? 
+                         <p className="text-slate-500 dark:text-zinc-400 text-xs w-full text-center mt-1 h-4">
+                            {statusError ? 
+                                <span className="text-red-500 dark:text-red-400 font-medium">{statusError}</span> :
+                             isStatusLoading ?
+                                'Connecting to backend...' :
+                             loadedDataSource && !isLoading && !error ? 
                                 `Data source: ${loadedDataSource === 'awx' ? `Live AWX` : loadedDataSource === 'db' ? `Cached DB` : 'Demo Data'}` :
                                 'Select a data source to begin.'
                             }
@@ -775,6 +782,9 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                 </span>
                 <span className="border-l border-slate-300 dark:border-zinc-700 h-4"></span>
                 <div className="flex items-center gap-x-3">
+                  <a href="https://osadmins.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">
+                      osadmins
+                  </a>
                   <a href="https://github.com/kmkamyk" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">
                       github
                   </a>
