@@ -160,15 +160,6 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
     }
 };
 
-const matchesLiveSearch = (fact: FactRow, term: string): boolean => {
-    const lowercasedTerm = term.toLowerCase();
-    return (
-        fact.host.toLowerCase().includes(lowercasedTerm) ||
-        fact.factPath.toLowerCase().includes(lowercasedTerm) ||
-        String(fact.value).toLowerCase().includes(lowercasedTerm)
-    );
-};
-
 
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
@@ -311,23 +302,18 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   }, []);
 
   const searchedFacts = useMemo(() => {
-    const trimmedLiveSearch = searchInputValue.trim();
-    let intermediateFacts = allFacts;
+    // Combine pills and the live search input into a single list of filters.
+    // .filter(Boolean) removes any empty strings from the list.
+    const filters = [...searchPills, searchInputValue.trim()].filter(Boolean);
 
-    // Apply pill filters first
-    if (searchPills.length > 0) {
-        intermediateFacts = allFacts.filter(fact => {
-            // A fact must match ALL pills to be included (AND logic)
-            return searchPills.every(pill => matchesPill(fact, pill));
-        });
+    if (filters.length === 0) {
+      return allFacts;
     }
 
-    // Apply live search filter on top of pill results
-    if (trimmedLiveSearch === '') {
-        return intermediateFacts;
-    }
-
-    return intermediateFacts.filter(fact => matchesLiveSearch(fact, trimmedLiveSearch));
+    return allFacts.filter(fact => {
+      // A fact must match ALL active filters to be included.
+      return filters.every(filter => matchesPill(fact, filter));
+    });
   }, [allFacts, searchPills, searchInputValue]);
 
 
