@@ -22,9 +22,13 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
   const stickyScrollbarRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const [tableWidth, setTableWidth] = useState(0);
+  const isStickyScrolling = useRef(false);
+  const isMainScrolling = useRef(false);
 
   // Sync scrolling between the sticky bar and the main content
   const handleMainScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (isStickyScrolling.current) return;
+
     const main = event.currentTarget;
     const sticky = stickyScrollbarRef.current;
     
@@ -40,15 +44,25 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
 
     // Sync horizontal scroll position to the sticky scrollbar
     if (sticky && sticky.scrollLeft !== main.scrollLeft) {
+      isMainScrolling.current = true;
       sticky.scrollLeft = main.scrollLeft;
+      requestAnimationFrame(() => {
+        isMainScrolling.current = false;
+      });
     }
   };
 
   const handleStickyScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (isMainScrolling.current) return;
+
     const sticky = event.currentTarget;
     const main = mainContainerRef.current;
     if (main && main.scrollLeft !== sticky.scrollLeft) {
+      isStickyScrolling.current = true;
       main.scrollLeft = sticky.scrollLeft;
+       requestAnimationFrame(() => {
+        isStickyScrolling.current = false;
+      });
     }
   };
   
@@ -66,7 +80,6 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
     if (!tableElement) return;
 
     const observer = new ResizeObserver(entries => {
-        // Using requestAnimationFrame to prevent "ResizeObserver loop limit exceeded" error
         window.requestAnimationFrame(() => {
             if (entries && entries.length > 0) {
                 setTableWidth(entries[0].contentRect.width);
@@ -105,14 +118,20 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
   const otherColumnHeaders = headers.slice(1);
 
   return (
-    <div className="h-full relative overflow-hidden">
-      {/* Main scrolling container, made taller to hide its native horizontal scrollbar below the visible area */}
+    <div className="h-full flex flex-col">
+      {/* Main scrolling container for the table itself */}
       <div
           ref={mainContainerRef}
           onScroll={handleMainScroll}
-          className="overflow-auto"
-          style={{ height: `calc(100% + ${SCROLLBAR_HEIGHT}px)`, paddingBottom: `${SCROLLBAR_HEIGHT}px` }}
+          className="flex-1 overflow-auto"
+          // Hide this container's native horizontal scrollbar
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
+          <style>{`
+            .hide-scrollbar::-webkit-scrollbar {
+              display: none;
+            }
+          `}</style>
           <table ref={tableRef} className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 border-separate" style={{ borderSpacing: 0 }}>
               <thead className="bg-slate-50 dark:bg-zinc-800/50 sticky top-0 z-10">
                 <tr>
@@ -175,10 +194,10 @@ const PivotedFactTable: React.FC<PivotedFactTableProps> = ({ data, headers, dens
       <div
         ref={stickyScrollbarRef}
         onScroll={handleStickyScroll}
-        className="absolute bottom-0 left-0 right-0 overflow-x-auto overflow-y-hidden bg-slate-100/80 dark:bg-zinc-900/80 backdrop-blur-sm border-t border-slate-200 dark:border-zinc-800"
-        style={{ height: `${SCROLLBAR_HEIGHT}px` }}
+        className="overflow-x-auto overflow-y-hidden bg-slate-100/80 dark:bg-zinc-900/80 backdrop-blur-sm border-t border-slate-200 dark:border-zinc-800"
+        style={{ height: `${SCROLLBAR_HEIGHT}px`, flexShrink: 0 }}
       >
-          {/* Sizer div to create the correct scroll width */}
+          {/* Sizer div to create the correct scroll width and make the thumb appear */}
           <div style={{ width: `${tableWidth}px`, height: '1px' }}></div>
       </div>
     </div>
