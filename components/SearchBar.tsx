@@ -229,6 +229,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
                   <br/><br/>
                   <strong className="font-semibold">Examples:</strong>
                   <ul className="list-disc list-inside mt-1 space-y-1 text-left">
+                      <li><code className="bg-slate-700 dark:bg-zinc-800 text-violet-400 font-medium px-1 rounded-sm">host=demo-db-1.example.com</code></li>
                       <li><code className="bg-slate-700 dark:bg-zinc-800 text-violet-400 font-medium px-1 rounded-sm">vcpus{'>'}4</code> (key-value filter)</li>
                       <li><code className="bg-slate-700 dark:bg-zinc-800 text-violet-400 font-medium px-1 rounded-sm">distribution=Ubuntu</code></li>
                       <li><code className="bg-slate-700 dark:bg-zinc-800 text-violet-400 font-medium px-1 rounded-sm">"22.04"</code> (exact match)</li>

@@ -104,12 +104,27 @@ const matchSingleTerm = (fact: FactRow, term: string): boolean => {
     const match = trimmedTerm.match(operatorRegex);
 
     if (match) {
-        const [, key, operator, value] = match.map(s => s ? s.trim() : '');
+        let [, key, operator, value] = match.map(s => s ? s.trim() : '');
         if (key && value) {
+            // Handle quoted values for all key-value searches. This allows values with spaces.
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.substring(1, value.length - 1);
+            }
+
             const lowerKey = key.toLowerCase();
             const lowerValue = value.toLowerCase();
 
-            // For key-value searches, only match against the relevant key (factPath)
+            // Handle special key 'host' or 'hostname' for direct filtering
+            if (lowerKey === 'host' || lowerKey === 'hostname') {
+                const hostValue = fact.host.toLowerCase();
+                switch (operator) {
+                    case '=': return hostValue === lowerValue;
+                    case '!=': return hostValue !== lowerValue;
+                    default: return false; // Numerical operators are not applicable to hostnames
+                }
+            }
+            
+            // For other key-value searches, match against the factPath
             if (!fact.factPath.toLowerCase().endsWith(lowerKey)) {
                 return false;
             }
