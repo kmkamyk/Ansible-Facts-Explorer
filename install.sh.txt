@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v3.2 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v3.5 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
-# - A dedicated PostgreSQL 17 database with an auto-generated secure password.
+# - A dedicated PostgreSQL database using the default system version.
 # - The Node.js API backend as a systemd service with dynamic configuration.
 # - An Nginx reverse proxy configured for HTTPS with self-signed certificates.
 # - Interactive prompts for required configuration (AWX URL and Token).
@@ -23,7 +23,7 @@ AWX_TOKEN=""
 
 FRONTEND_DIR="/app/afe"
 BACKEND_DIR="/data/afe-api"
-PGDATA="/var/lib/pgsql/17/data" # For PostgreSQL 17 from PGDG repo
+PGDATA="/var/lib/pgsql/data" # Default data directory for PostgreSQL
 PGUSER="afeuser"
 PGDB="afedb"
 SERVICE_FILE="/etc/systemd/system/afe-api.service"
@@ -65,15 +65,21 @@ function run_checks() {
 function interactive_setup() {
     log_info "Starting interactive setup for backend configuration..."
 
-    # Generate a secure random password for PostgreSQL
-    log_info "Generating a secure password for the database user '$PGUSER'..."
-    if command -v openssl &> /dev/null; then
-        PGPASSWORD=$(openssl rand -base64 24)
-    else
-        # Fallback for systems without openssl CLI
-        PGPASSWORD=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32)
+    # Prompt for PostgreSQL password
+    local PGPASSWORD_CONFIRM
+    read -sp "Enter a password for the new database user '$PGUSER' (will not be displayed): " PGPASSWORD
+    echo
+    if [[ -z "$PGPASSWORD" ]]; then
+        log_error "Database password cannot be empty."
+        exit 1
     fi
-    log_info "Database password has been generated."
+    read -sp "Confirm the password: " PGPASSWORD_CONFIRM
+    echo
+    if [[ "$PGPASSWORD" != "$PGPASSWORD_CONFIRM" ]]; then
+        log_error "Passwords do not match. Aborting."
+        exit 1
+    fi
+    log_info "Database password has been set."
 
     # Prompt for AWX URL
     read -p "Enter your AWX instance URL (e.g., https://awx.example.com): " AWX_URL
@@ -191,7 +197,7 @@ EOF
 [Unit]
 Description=AFE API backend (Node.js)
 Documentation=https://github.com/kmkamyk/ansible-facts-explorer
-After=network.target postgresql-17.service
+After=network.target postgresql.service
 
 [Service]
 Type=simple
@@ -221,34 +227,54 @@ EOF
 }
 
 function install_postgres() {
-  log_info "Installing and configuring PostgreSQL 17..."
-  
-  if ! dnf repolist | grep -q "pgdg17"; then
-    log_info "PostgreSQL PGDG repository not found. Installing..."
-    # The command is for RHEL 9 and its derivatives (Rocky, Alma etc.)
-    dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-    # Disable the default postgresql module to avoid conflicts
-    dnf -qy module disable postgresql
-  fi
+  log_info "Installing and configuring PostgreSQL from default repositories..."
 
-  log_info "Installing PostgreSQL 17 server..."
-  dnf install -y postgresql17-server
+  log_info "Installing PostgreSQL server..."
+  dnf install -y postgresql-server
 
   if [ ! -d "$PGDATA/base" ]; then
     log_info "Initializing PostgreSQL database at $PGDATA..."
-    /usr/pgsql-17/bin/postgresql-17-setup initdb
+    # Use the standard setup script for the default package, usually in /usr/bin
+    if command -v postgresql-setup &>/dev/null; then
+        /usr/bin/postgresql-setup --initdb
+    else
+        log_error "postgresql-setup script not found. Cannot initialize the database cluster."
+        log_error "Please initialize the PostgreSQL database manually."
+        exit 1
+    fi
   else
     log_warn "PostgreSQL data directory already exists. Skipping initialization."
   fi
   
-  log_info "Enabling and starting the postgresql-17 service..."
-  systemctl enable --now postgresql-17
+  log_info "Enabling and starting the postgresql service..."
+  systemctl enable --now postgresql
 
   log_info "Configuring database '$PGDB' and user '$PGUSER'..."
   sudo -i -u postgres -- psql -c "SELECT 1 FROM pg_roles WHERE rolname='$PGUSER'" | grep -q 1 || sudo -i -u postgres -- psql -c "CREATE ROLE $PGUSER WITH LOGIN PASSWORD '$PGPASSWORD';"
   sudo -i -u postgres -- psql -lqt | cut -d \| -f 1 | grep -qw "$PGDB" || sudo -i -u postgres -- psql -c "CREATE DATABASE $PGDB OWNER $PGUSER;"
   
   sudo -i -u postgres -- psql -d "$PGDB" -c "GRANT ALL PRIVILEGES ON DATABASE $PGDB TO $PGUSER;"
+
+  log_info "Configuring PostgreSQL to allow password authentication for local connections..."
+  PG_HBA_CONF="$PGDATA/pg_hba.conf"
+  if [ -f "$PG_HBA_CONF" ]; then
+    if ! grep -q "$PG_HBA_CONF.bak" "$PG_HBA_CONF.bak" &>/dev/null; then
+        log_info "Backing up pg_hba.conf to $PG_HBA_CONF.bak"
+        cp "$PG_HBA_CONF" "$PG_HBA_CONF.bak"
+    fi
+    
+    # This is the key change:
+    # - We leave 'local' connections as 'peer' so that script-based admin actions (like this one) work without a password.
+    # - We change 'host' connections (TCP/IP, even to localhost) from 'ident' to 'scram-sha-256' so that psql/apps can connect with a password.
+    log_info "Updating pg_hba.conf to use 'scram-sha-256' for password authentication on host connections..."
+    sed -i -E "s/^(host\s+all\s+all\s+127\.0\.0\.1\/32\s+)ident$/\1scram-sha-256/" "$PG_HBA_CONF"
+    sed -i -E "s/^(host\s+all\s+all\s+::1\/128\s+)ident$/\1scram-sha-256/" "$PG_HBA_CONF"
+
+    log_info "Reloading PostgreSQL to apply authentication changes..."
+    systemctl reload postgresql
+  else
+    log_warn "Could not find pg_hba.conf at $PG_HBA_CONF. Manual configuration may be required to enable password authentication."
+  fi
 
   log_info "Creating the 'facts' table if it doesn't exist..."
   sudo -i -u postgres -- psql -d "$PGDB" <<SQL
@@ -262,7 +288,7 @@ CREATE TABLE IF NOT EXISTS facts (
 ALTER TABLE facts OWNER TO $PGUSER;
 SQL
 
-  log_info "PostgreSQL 17 installed and configured successfully."
+  log_info "PostgreSQL installed and configured successfully."
 }
 
 function configure_nginx() {
@@ -353,8 +379,8 @@ function uninstall_app() {
     fi
 
     log_info "Stopping and disabling services..."
-    systemctl stop afe-api.service nginx postgresql-17 || log_warn "Could not stop all services (they may not be running)."
-    systemctl disable afe-api.service postgresql-17 || log_warn "Could not disable all services."
+    systemctl stop afe-api.service nginx postgresql || log_warn "Could not stop all services (they may not be running)."
+    systemctl disable afe-api.service postgresql || log_warn "Could not disable all services."
 
     if systemctl is-active --quiet firewalld; then
         log_info "Removing firewall rules for HTTP and HTTPS..."
@@ -392,29 +418,29 @@ function uninstall_app() {
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log_info "Dropping database '$PGDB' and user '$PGUSER'..."
-        if systemctl is-active --quiet postgresql-17; then
+        if systemctl is-active --quiet postgresql; then
             sudo -i -u postgres -- psql -c "DROP DATABASE IF EXISTS $PGDB;" || log_warn "Failed to drop database '$PGDB'."
             sudo -i -u postgres -- psql -c "DROP ROLE IF EXISTS $PGUSER;" || log_warn "Failed to drop role '$PGUSER'."
         else
-            log_warn "PostgreSQL 17 is not running. Cannot drop database and user automatically."
+            log_warn "PostgreSQL is not running. Cannot drop database and user automatically."
         fi
     else
         log_warn "PostgreSQL database and user were not removed."
     fi
 
-    read -p "Do you want to COMPLETELY UNINSTALL PostgreSQL 17 and DELETE all its data? This cannot be undone. [y/N] " -n 1 -r
+    read -p "Do you want to COMPLETELY UNINSTALL PostgreSQL and DELETE all its data? This cannot be undone. [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        log_warn "Proceeding with complete PostgreSQL 17 removal..."
-        systemctl stop postgresql-17 || log_warn "PostgreSQL 17 was not running."
-        systemctl disable postgresql-17 || log_warn "Could not disable PostgreSQL 17."
-        log_info "Removing PostgreSQL 17 packages..."
-        dnf remove -y 'postgresql17*' > /dev/null
+        log_warn "Proceeding with complete PostgreSQL removal..."
+        systemctl stop postgresql || log_warn "PostgreSQL was not running."
+        systemctl disable postgresql || log_warn "Could not disable PostgreSQL."
+        log_info "Removing PostgreSQL packages..."
+        dnf remove -y 'postgresql-server' > /dev/null
         log_info "Deleting PostgreSQL data directory $PGDATA..."
         rm -rf "$PGDATA"
-        log_warn "PostgreSQL 17 and all its data have been removed."
+        log_warn "PostgreSQL and all its data have been removed."
     else
-        log_warn "PostgreSQL 17 package was not removed."
+        log_warn "PostgreSQL package was not removed."
     fi
 
     log_info "Uninstall complete."
@@ -428,8 +454,8 @@ function show_status() {
     echo "--- AFE API Backend Status ---"
     systemctl status afe-api.service --no-pager
     echo
-    echo "--- PostgreSQL 17 Status ---"
-    systemctl status postgresql-17 --no-pager
+    echo "--- PostgreSQL Status ---"
+    systemctl status postgresql --no-pager
 }
 
 ### MAIN SCRIPT LOGIC ###
@@ -473,8 +499,8 @@ case "$1" in
     log_info "All services deployed successfully."
     log_info "App URL:              https://<your_server_ip>"
     log_info "Database User:        $PGUSER"
-    log_warn "Database Password:    $PGPASSWORD"
-    log_warn "!!! IMPORTANT: Save this password securely. It is needed for manual database access. !!!"
+    log_info "Database Password:    (the one you provided during setup)"
+    log_warn "!!! IMPORTANT: Remember the password. It is needed for manual database access. !!!"
     log_info "AWX URL configured:   $AWX_URL"
     log_info "Backend config file:  $BACKEND_DIR/config.js"
     log_info "You can now access the application at the URL above."
@@ -487,7 +513,7 @@ case "$1" in
     log_warn "The 'postgres' command is intended for debugging. For a full install, use 'all'."
     interactive_setup
     install_postgres
-    log_warn "Remember to save the generated password: $PGPASSWORD"
+    log_warn "PostgreSQL has been configured with the password you provided."
     ;;
   nginx)
     generate_ssl_certs # Nginx needs certs to start correctly
