@@ -341,50 +341,67 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
       return grouped;
   }, [allFacts]);
 
-  // Refactored filtering logic:
-  // 1. Host Context (AND): Pills are combined with AND logic to find the set of hosts that match ALL conditions.
-  // 2. Fact Display (OR): For the hosts found, the table displays only the facts that match ANY of the pills OR the live search input.
+  // ** Combined AND/OR Filtering Logic **
+  // This logic implements the user's request for combined search behavior.
   const { searchedTableFacts, searchedDashboardFacts } = useMemo(() => {
-      const trimmedInput = searchInputValue.trim();
-      
-      // If there are no filters at all, return everything.
-      if (searchPills.length === 0 && !trimmedInput) {
-          return { searchedTableFacts: allFacts, searchedDashboardFacts: allFacts };
-      }
+    const trimmedInput = searchInputValue.trim();
+    
+    // If there are no filters at all, return all facts.
+    if (searchPills.length === 0 && !trimmedInput) {
+        return { searchedTableFacts: allFacts, searchedDashboardFacts: allFacts };
+    }
 
-      // Step 1: Determine the set of hosts that match ALL the pills (host context).
-      const matchingHostnames = new Set<string>();
-      if (searchPills.length > 0) {
-          factsByHost.forEach((hostFacts, host) => {
-              const allPillsMatchForHost = searchPills.every(pill =>
-                  hostFacts.some(fact => matchesPill(fact, pill))
-              );
-              if (allPillsMatchForHost) {
-                  matchingHostnames.add(host);
-              }
-          });
-      } else {
-          // If no pills, all hosts are initially in context for the live search.
-          factsByHost.forEach((_, host) => matchingHostnames.add(host));
-      }
+    // Step 1: Determine the set of hosts to display.
+    // Logic: A host is included if it matches (ALL pills) OR (the live input).
+    const matchingHostnames = new Set<string>();
+    
+    factsByHost.forEach((hostFacts, host) => {
+        // Condition for pills (AND logic): Does the host match every single pill?
+        const allPillsMatch = searchPills.length > 0 
+            ? searchPills.every(pill => hostFacts.some(fact => matchesPill(fact, pill)))
+            : false; // If no pills, this part of the OR condition can't be met.
 
-      // Step 2: Get all facts for matching hosts. This is the full context for the dashboard.
-      const contextFacts = allFacts.filter(fact => matchingHostnames.has(fact.host));
+        // Condition for live input: Does the host have any fact matching the text in the search box?
+        const liveInputMatches = trimmedInput 
+            ? hostFacts.some(fact => matchesPill(fact, trimmedInput))
+            : false;
 
-      // Step 3: Filter the context facts to determine what's visible in the table.
-      const tableFacts = (searchPills.length > 0 ? contextFacts : allFacts).filter(fact => {
-          const matchesLiveInput = trimmedInput ? matchesPill(fact, trimmedInput) : false;
-          
-          if (searchPills.length === 0) {
-              return matchesLiveInput; // Only live search is active, filtering all facts.
-          }
-          
-          // Pills are active. A fact is shown if it matches any pill OR the live input.
-          const matchesAnyPill = searchPills.some(pill => matchesPill(fact, pill));
-          return matchesAnyPill || matchesLiveInput;
-      });
+        // Determine which logic to apply based on what filters are active.
+        let hostIsAMatch = false;
+        if (searchPills.length > 0 && trimmedInput) {
+            // With pills AND input, logic is (all pills match) OR (input matches).
+            hostIsAMatch = allPillsMatch || liveInputMatches;
+        } else if (searchPills.length > 0) {
+            // With only pills, logic is (all pills match).
+            hostIsAMatch = allPillsMatch;
+        } else { // This implicitly means `else if (trimmedInput)`
+            // With only input, logic is (input matches).
+            hostIsAMatch = liveInputMatches;
+        }
+        
+        if (hostIsAMatch) {
+            matchingHostnames.add(host);
+        }
+    });
 
-      return { searchedTableFacts: tableFacts, searchedDashboardFacts: contextFacts };
+    // Step 2: Get all facts for the hosts that met the criteria.
+    // This provides the full context for the dashboard.
+    const contextFacts = allFacts.filter(fact => matchingHostnames.has(fact.host));
+
+    // Step 3: Filter the context facts to determine what's visible in the table.
+    // We show any fact that contributed to the host being selected.
+    const tableFacts = contextFacts.filter(fact => {
+        const matchesAnyPill = searchPills.length > 0 
+            ? searchPills.some(pill => matchesPill(fact, pill))
+            : false;
+            
+        const matchesLiveInput = trimmedInput ? matchesPill(fact, trimmedInput) : false;
+        
+        // If a fact matches any pill OR the live input, show it. This highlights why the host was selected.
+        return matchesAnyPill || matchesLiveInput;
+    });
+
+    return { searchedTableFacts: tableFacts, searchedDashboardFacts: contextFacts };
   }, [allFacts, factsByHost, searchPills, searchInputValue]);
 
 
