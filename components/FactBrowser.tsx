@@ -350,7 +350,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     if (!hasPills && !hasInput) {
         return { searchedTableFacts: allFacts, searchedDashboardFacts: allFacts };
     }
-
+    
     // Step 1: Determine the set of hosts that match the pill criteria (AND logic).
     const hostsMatchingPills = new Set<string>();
     if (hasPills) {
@@ -367,7 +367,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
     // Step 2: Determine the final set of hosts to display based on OR logic with live input.
     let finalHostnames: Set<string>;
-
     if (hasInput) {
         // Find hosts matching the live input.
         const hostsMatchingInput = new Set<string>();
@@ -392,14 +391,41 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     // Step 3: Get all facts for the final set of hosts (for dashboard context).
     const contextFacts = allFacts.filter(fact => finalHostnames.has(fact.host));
 
-    // Step 4: Filter context facts to determine what's visible in the table.
-    // We show any fact that contributed to the host being selected.
+    // Step 4: **NEW LOGIC** - Filter context facts to determine what's visible in the table.
+    // First, classify pills into host-specific pills and general fact/value pills.
+    const allHostnames = new Set(Array.from(factsByHost.keys(), h => h.toLowerCase()));
+    const otherPills: string[] = [];
+
+    if (hasPills) {
+        searchPills.forEach(pill => {
+            const trimmedPill = pill.trim();
+            // A pill is considered a "host pill" if it's an exact match for a known hostname.
+            if (trimmedPill.startsWith('"') && trimmedPill.endsWith('"')) {
+                const exactTerm = trimmedPill.substring(1, trimmedPill.length - 1).toLowerCase();
+                if (allHostnames.has(exactTerm)) {
+                    // This is a host pill, so we don't add it to the list of fact filters.
+                    // Its job was already done during host selection.
+                    return;
+                }
+            }
+            // All other pills are treated as fact/value filters.
+            otherPills.push(pill);
+        });
+    }
+    
+    // Combine the "other" pills with the live search input for the final row-level filtering.
+    const activeRowFilters = hasInput ? [...otherPills, trimmedInput] : otherPills;
+
     const tableFacts = contextFacts.filter(fact => {
-        const matchesAnyPill = hasPills && searchPills.some(pill => matchesPill(fact, pill));
-        const matchesLiveInput = hasInput && matchesPill(fact, trimmedInput);
+        // If there are any row-level filters active (from pills or live search),
+        // the fact must match at least one of them to be shown.
+        if (activeRowFilters.length > 0) {
+            return activeRowFilters.some(filter => matchesPill(fact, filter));
+        }
         
-        // A fact is shown if it matches any of the active filters.
-        return matchesAnyPill || matchesLiveInput;
+        // If ONLY host pills are active (and no live search), all facts for the
+        // selected hosts (which are already in contextFacts) should be shown.
+        return true;
     });
 
     return { searchedTableFacts: tableFacts, searchedDashboardFacts: contextFacts };
