@@ -95,12 +95,13 @@ const pivotFactsForExport = (facts: FactRow[]): { data: Record<string, any>[]; h
     return { data: dataForExport, headers: ['hostname', ...sortedFactPaths] };
 };
 
-const matchesPill = (fact: FactRow, pill: string): boolean => {
-    const trimmedPill = pill.trim();
-    if (!trimmedPill) return true;
+const matchSingleTerm = (fact: FactRow, term: string): boolean => {
+    const trimmedTerm = term.trim();
+    // An empty term within an OR query should not match anything.
+    if (!trimmedTerm) return false;
 
     const operatorRegex = /^(.*?)\s*(!=|>=|<=|>|<|=)\s*(.*)$/;
-    const match = trimmedPill.match(operatorRegex);
+    const match = trimmedTerm.match(operatorRegex);
 
     if (match) {
         const [, key, operator, value] = match.map(s => s ? s.trim() : '');
@@ -131,8 +132,8 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
         }
     }
 
-    if (trimmedPill.startsWith('"') && trimmedPill.endsWith('"')) {
-        const exactTerm = trimmedPill.substring(1, trimmedPill.length - 1).toLowerCase();
+    if (trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"')) {
+        const exactTerm = trimmedTerm.substring(1, trimmedTerm.length - 1).toLowerCase();
         return (
             fact.host.toLowerCase() === exactTerm ||
             fact.factPath.toLowerCase() === exactTerm ||
@@ -142,7 +143,7 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
     
     // Default to regex/includes search across all fields for the pill
     try {
-        const regex = new RegExp(trimmedPill, 'i');
+        const regex = new RegExp(trimmedTerm, 'i');
         return (
             regex.test(fact.host) ||
             regex.test(fact.factPath) ||
@@ -150,7 +151,7 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
             (fact.modified ? regex.test(String(fact.modified)) : false)
         );
     } catch (e) {
-        const lowercasedFilter = trimmedPill.toLowerCase();
+        const lowercasedFilter = trimmedTerm.toLowerCase();
         return (
             fact.host.toLowerCase().includes(lowercasedFilter) ||
             fact.factPath.toLowerCase().includes(lowercasedFilter) ||
@@ -158,6 +159,18 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
             (fact.modified ? String(fact.modified).toLowerCase().includes(lowercasedFilter) : false)
         );
     }
+};
+
+
+const matchesPill = (fact: FactRow, pill: string): boolean => {
+    const trimmedPill = pill.trim();
+    if (!trimmedPill) return true;
+
+    // Split by '|' to handle OR conditions. This will also handle single terms correctly.
+    const orTerms = trimmedPill.split('|');
+    
+    // If any of the OR terms match, the whole pill is a match.
+    return orTerms.some(term => matchSingleTerm(fact, term));
 };
 
 
@@ -301,44 +314,79 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     }
   }, []);
 
-  // This is the primary data filtering logic.
-  const searchedFacts = useMemo(() => {
-    const filters = [...searchPills, searchInputValue.trim()].filter(Boolean);
+  // Memoize facts grouped by host to optimize host-level filtering.
+  const factsByHost = useMemo(() => {
+      const grouped = new Map<string, FactRow[]>();
+      allFacts.forEach(fact => {
+          if (!grouped.has(fact.host)) {
+              grouped.set(fact.host, []);
+          }
+          grouped.get(fact.host)!.push(fact);
+      });
+      return grouped;
+  }, [allFacts]);
 
-    // If there are no filters, return all facts.
-    if (filters.length === 0) {
-      return allFacts;
-    }
+  // Refactored filtering logic:
+  // 1. Host Context (AND): Pills are combined with AND logic to find the set of hosts that match ALL conditions.
+  // 2. Fact Display (OR): For the hosts found, the table displays only the facts that match ANY of the pills OR the live search input.
+  const { searchedTableFacts, searchedDashboardFacts } = useMemo(() => {
+      const trimmedInput = searchInputValue.trim();
+      
+      // If there are no filters at all, return everything.
+      if (searchPills.length === 0 && !trimmedInput) {
+          return { searchedTableFacts: allFacts, searchedDashboardFacts: allFacts };
+      }
 
-    // If there are filters, first find the specific fact rows that match.
-    const matchingRows = allFacts.filter(fact => {
-      return filters.every(filter => matchesPill(fact, filter));
-    });
+      // Step 1: Determine the set of hosts that match ALL the pills (host context).
+      const matchingHostnames = new Set<string>();
+      if (searchPills.length > 0) {
+          factsByHost.forEach((hostFacts, host) => {
+              const allPillsMatchForHost = searchPills.every(pill =>
+                  hostFacts.some(fact => matchesPill(fact, pill))
+              );
+              if (allPillsMatchForHost) {
+                  matchingHostnames.add(host);
+              }
+          });
+      } else {
+          // If no pills, all hosts are initially in context for the live search.
+          factsByHost.forEach((_, host) => matchingHostnames.add(host));
+      }
 
-    // Then, get the unique hostnames from those matching rows.
-    const matchingHostnames = new Set(matchingRows.map(fact => fact.host));
+      // Step 2: Get all facts for matching hosts. This is the full context for the dashboard.
+      const contextFacts = allFacts.filter(fact => matchingHostnames.has(fact.host));
 
-    // Finally, return ALL facts for those hosts to show full context.
-    return allFacts.filter(fact => matchingHostnames.has(fact.host));
-  }, [allFacts, searchPills, searchInputValue]);
+      // Step 3: Filter the context facts to determine what's visible in the table.
+      const tableFacts = (searchPills.length > 0 ? contextFacts : allFacts).filter(fact => {
+          const matchesLiveInput = trimmedInput ? matchesPill(fact, trimmedInput) : false;
+          
+          if (searchPills.length === 0) {
+              return matchesLiveInput; // Only live search is active, filtering all facts.
+          }
+          
+          // Pills are active. A fact is shown if it matches any pill OR the live input.
+          const matchesAnyPill = searchPills.some(pill => matchesPill(fact, pill));
+          return matchesAnyPill || matchesLiveInput;
+      });
+
+      return { searchedTableFacts: tableFacts, searchedDashboardFacts: contextFacts };
+  }, [allFacts, factsByHost, searchPills, searchInputValue]);
 
 
   const filteredFacts = useMemo(() => {
-    // If all facts are visible, no need to filter further
+    // This now operates on the direct search results for the table.
     if (allFactPaths.length > 0 && visibleFactPaths.size === allFactPaths.length) {
-      return searchedFacts;
+      return searchedTableFacts;
     }
-    // Filter based on the visibleFactPaths set
-    return searchedFacts.filter(fact => 
+    return searchedTableFacts.filter(fact => 
       visibleFactPaths.has(fact.factPath) || fact.factPath === '---'
     );
-  }, [searchedFacts, visibleFactPaths, allFactPaths]);
+  }, [searchedTableFacts, visibleFactPaths, allFactPaths]);
 
   const dashboardFacts = useMemo(() => {
-    // The dashboard should always operate on the set of hosts matching the filter.
-    // Our `searchedFacts` logic already provides this dataset.
-    return searchedFacts;
-  }, [searchedFacts]);
+    // This now uses the dedicated dashboard data with full context.
+    return searchedDashboardFacts;
+  }, [searchedDashboardFacts]);
   
   const handleRequestSort = (key: SortableKey) => {
     let direction: SortDirection = 'ascending';
