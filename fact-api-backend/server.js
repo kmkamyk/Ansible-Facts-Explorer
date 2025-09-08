@@ -311,10 +311,10 @@ The supported filter syntax is:
 
 Rules:
 - You MUST respond with ONLY a valid JSON array of strings. Do not add any explanation, preamble, or markdown formatting.
+- By default, first try to generate filters using only fact names or their values, without applying "key=value", ""exact text"", or regex syntax.
+- If the user's query clearly refers to a specific value, condition, or comparison, then use the more specific filter mechanisms ("key=value", ""exact text"", comparisons, etc.).
 - Analyze the user's query and break it down into the most specific and accurate filter pills possible.
-- If a user asks to find a category of information without providing a specific value (e.g., "search for distributions", "show me all kernels"), return only the relevant fact path as a string in the array. For example, the query "search for distributions" should result in \`["ansible_distribution"]\`. Do NOT invent a value like \`"ansible_distribution=distributions"\`.
-- Only use the 'key=value' syntax when the user provides a specific value to filter by (e.g., "find Ubuntu hosts" should result in \`["ansible_distribution=Ubuntu"]\`).
-- If a user mentions a specific version number or a value that needs to be exact, use the key="value" syntax.
+- Use the 'key=value' syntax whenever possible when the user explicitly specifies a value and it matches one of the available fact paths.
 - If the user's intent is unclear, generate the most likely set of filters.
 
 User Query: "${prompt}"
