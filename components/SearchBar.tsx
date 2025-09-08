@@ -31,7 +31,7 @@ const SearchModeButton: React.FC<{ onClick: () => void, isLoading: boolean, isAi
     >
         <span className={`font-semibold transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'} ${
             isAiMode 
-                ? 'text-slate-700 dark:text-zinc-200' 
+                ? 'text-sm text-slate-700 dark:text-zinc-200' 
                 : 'bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400'
         }`}>
             {isAiMode ? 'Classic' : 'AI'}
