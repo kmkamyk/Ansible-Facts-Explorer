@@ -1,7 +1,7 @@
 // server.js
 
 const express = require('express');
-const https = require('https'');
+const https = require('https');
 const fs = require('fs');
 const { Pool } = require('pg');
 const cors = require('cors');
