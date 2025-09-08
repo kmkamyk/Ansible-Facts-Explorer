@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
 import { demoService } from '../services/demoService';
-import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey, Pill } from '../types';
+import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey } from '../types';
 import SearchBar from './SearchBar';
 import FactTable from './FactTable';
 import PivotedFactTable from './PivotedFactTable';
@@ -192,13 +192,12 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
 
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
-  const [searchPills, setSearchPills] = useState<Pill[]>([]);
+  const [searchPills, setSearchPills] = useState<string[]>([]);
   const [searchInputValue, setSearchInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModifiedColumn, setShowModifiedColumn] = useState(false);
-  const [isAiSearchActive, setIsAiSearchActive] = useState(false);
   
   const [dataSource, setDataSource] = useState<'awx' | 'db' | 'demo'>('demo');
   const [loadedDataSource, setLoadedDataSource] = useState<'awx' | 'db' | 'demo' | null>(null);
@@ -331,8 +330,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     try {
         const filters = await apiService.performAiSearch(prompt, allFactPaths);
         // AI returns a complete new set of filters, so we replace the existing ones.
-        const aiPills: Pill[] = filters.map(f => ({ id: `${Date.now()}-${f}`, value: f, source: 'ai' }));
-        setSearchPills(aiPills);
+        setSearchPills(filters);
         setSearchInputValue(''); // Clear the input after search
     } catch (e: any) {
         setError(e.message || 'AI search failed.');
@@ -345,15 +343,9 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
     const stringValue = String(value).trim();
     if (stringValue && stringValue !== '---' && stringValue !== '(No data available)') {
-        const newPillValue = `"${stringValue}"`;
-        // Add new pill, avoiding duplicates by value
-        setSearchPills(prevPills => {
-            if (prevPills.some(p => p.value === newPillValue)) {
-                return prevPills;
-            }
-            const newPill: Pill = { id: `${Date.now()}-${newPillValue}`, value: newPillValue, source: 'user' };
-            return [...prevPills, newPill];
-        });
+        const newPill = `"${stringValue}"`;
+        // Add new pill, avoiding duplicates
+        setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
     }
   }, []);
 
@@ -385,7 +377,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         factsByHost.forEach((hostFacts, host) => {
             // A host must have facts that satisfy EVERY pill.
             const allPillsMatch = searchPills.every(pill => 
-                hostFacts.some(fact => matchesPill(fact, pill.value))
+                hostFacts.some(fact => matchesPill(fact, pill))
             );
             if (allPillsMatch) {
                 hostsMatchingPills.add(host);
@@ -395,7 +387,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
     // Step 2: Determine the final set of hosts to display based on OR logic with live input.
     let finalHostnames: Set<string>;
-    if (hasInput && !isAiSearchActive) {
+    if (hasInput) {
         // Find hosts matching the live input.
         const hostsMatchingInput = new Set<string>();
         factsByHost.forEach((hostFacts, host) => {
@@ -412,7 +404,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
             finalHostnames = hostsMatchingInput;
         }
     } else {
-        // If there's no input, or we are in AI mode, the final set is just the hosts that matched the pills.
+        // If there's no input, the final set is just the hosts that matched the pills.
         finalHostnames = hostsMatchingPills;
     }
 
@@ -426,7 +418,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
     if (hasPills) {
         searchPills.forEach(pill => {
-            const trimmedPill = pill.value.trim();
+            const trimmedPill = pill.trim();
             // A pill is considered a "host pill" if it's an exact match for a known hostname.
             if (trimmedPill.startsWith('"') && trimmedPill.endsWith('"')) {
                 const exactTerm = trimmedPill.substring(1, trimmedPill.length - 1).toLowerCase();
@@ -437,12 +429,12 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                 }
             }
             // All other pills are treated as fact/value filters.
-            otherPills.push(pill.value);
+            otherPills.push(pill);
         });
     }
     
     // Combine the "other" pills with the live search input for the final row-level filtering.
-    const activeRowFilters = (hasInput && !isAiSearchActive) ? [...otherPills, trimmedInput] : otherPills;
+    const activeRowFilters = hasInput ? [...otherPills, trimmedInput] : otherPills;
 
     const tableFacts = contextFacts.filter(fact => {
         // If there are any row-level filters active (from pills or live search),
@@ -457,7 +449,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     });
 
     return { searchedTableFacts: tableFacts, searchedDashboardFacts: contextFacts };
-  }, [allFacts, factsByHost, searchPills, searchInputValue, isAiSearchActive]);
+  }, [allFacts, factsByHost, searchPills, searchInputValue]);
 
 
   const filteredFacts = useMemo(() => {
@@ -751,8 +743,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     onAiSearch={handleAiSearch}
                     isAiLoading={isAiLoading}
                     isAiEnabled={serviceStatus.ai.enabled}
-                    isAiSearchActive={isAiSearchActive}
-                    setIsAiSearchActive={setIsAiSearchActive}
                   />
                   <p className={`text-xs text-slate-500 dark:text-zinc-400 pt-2`}>
                     Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.

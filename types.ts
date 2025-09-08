@@ -21,13 +21,6 @@ export interface DbConfig {
   database: string;
 }
 
-// A search pill with metadata about its origin
-export interface Pill {
-  id: string;
-  value: string;
-  source: 'user' | 'ai';
-}
-
 // Define sorting types
 export type SortableKey = string;
 export type SortDirection = 'ascending' | 'descending';
