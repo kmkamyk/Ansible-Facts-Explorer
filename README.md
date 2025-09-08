@@ -6,6 +6,7 @@ Ansible Facts Explorer is a powerful and intuitive web application designed to f
 
 ## ✨ Key Features
 
+- **AI-Powered Search**: Seamlessly switch to an AI-driven search mode. Ask natural language questions (e.g., "show me all ubuntu hosts with more than 4 cpus") and get precise filters generated automatically. Powered by a local [Ollama](https://ollama.com/) instance.
 - **Multiple Data Sources**: Seamlessly switch between fetching data from a live AWX API, a pre-populated PostgreSQL database, or built-in demo data.
 - **Interactive Dashboard**: Get a high-level overview of your infrastructure with a dynamic dashboard featuring:
   - Key metric cards (total hosts, facts, vCPUs, memory).
@@ -14,10 +15,8 @@ Ansible Facts Explorer is a powerful and intuitive web application designed to f
     - **List View**: A traditional, flat list of all facts, ideal for searching and sorting across all hosts.
     - **Pivot View**: A host-centric view where each row is a host and facts are columns, perfect for comparing specific configurations between machines.
 - **Advanced Search & Filtering**: A single search bar supports:
-  - **Text Search**: Instantly filters hostnames, fact paths, and values.
-  - **Regular Expressions**: For complex pattern matching.
-  - **Key-Value Filtering**: Use operators (`=`, `!=`, `>`, `<`, `>=`, `<=`) for precise queries (e.g., `ansible_processor_vcpus > 4`, `ansible_distribution = Ubuntu`).
-  - **Exact Match**: Wrap your query in quotes for an exact match.
+  - **Classic Mode**: Instantly filter with text search, regular expressions, key-value queries (`vcpus > 4`), and exact matches (`"22.04"`).
+  - **Filter Pills**: Combine multiple search criteria as persistent "pills" that use AND logic.
 - **Dynamic Column Management**:
     - **Fact Filter Panel**: Easily show or hide hundreds of fact paths from the tables to focus on what matters.
     - **In-Table Column Removal**: In Pivot View, remove columns directly from the header for quick analysis.
@@ -33,6 +32,8 @@ Ansible Facts Explorer is a powerful and intuitive web application designed to f
 ##  diagrama: How It Works
 
 The application decouples the frontend from the data-fetching logic. The backend acts as a secure gateway to your data sources.
+
+#### Standard Data Fetching
 
 ```
 +------------------+      +---------------------+      +------------------------+
@@ -56,6 +57,32 @@ The application decouples the frontend from the data-fetching logic. The backend
         |                         |                              |
         | 4. Render UI            |                              |
         |                         |                              |
+        v                         v                              v
+```
+
+#### AI-Powered Search Flow
+
+```
++------------------+      +---------------------+      +----------------+
+| Browser          |      | Backend Server      |      | Ollama API     |
+| (React Frontend) |      | (Node.js/Express)   |      | (e.g., Llama3) |
++------------------+      +---------------------+      +----------------+
+        |                         |                              |
+        | 1. AI Search Request    |                              |
+        | (Natural Language)      |                              |
+        | ----------------------> |                              |
+        |                         | 2. Construct System Prompt   |
+        |                         |    (with context & fact list)|
+        |                         | -----------------------------> |
+        |                         |                              |
+        |                         | 3. Get Filter Suggestions    |
+        |                         | <---------------------------- |
+        |                         |                              |
+        | 4. Return JSON filters  |                              |
+        | <---------------------- |                              |
+        |                         |                              |
+        | 5. Apply Filters        |                              |
+        |    & Update UI          |                              |
         v                         v                              v
 ```
 
@@ -84,25 +111,6 @@ AWX/Tower stores facts when a playbook is run against a host, but only if fact c
             msg: "Facts have been gathered and will be cached by AWX."
     ```
 
-3.  **Optimize Fact Collection (Optional)**: Ansible can gather a large amount of data, some of which you may not need. To improve performance and reduce storage, you can limit the facts that are collected. You can use the `ansible.builtin.setup` module with parameters like `gather_subset` or `filter`.
-
-    For example, to gather only network and hardware-related facts:
-
-    ```yaml
-    ---
-    - name: Gather a subset of Ansible facts
-      hosts: all
-      tasks:
-        - name: Gather only network and hardware facts
-          ansible.builtin.setup:
-            gather_subset:
-              - '!all'
-              - 'network'
-              - 'hardware'
-    ```
-
-    This customization makes both Ansible execution and subsequent browsing in the Facts Explorer much faster.
-
 ### For the "Cached DB" Source
 
 The PostgreSQL database acts as a high-performance cache. It's designed to be populated periodically from a source of truth, typically your AWX instance. You can create a script (e.g., Python, Bash) that:
@@ -111,7 +119,6 @@ The PostgreSQL database acts as a high-performance cache. It's designed to be po
 2.  Connects to your PostgreSQL database.
 3.  Inserts or updates the facts for each host in the `facts` table, making sure to update the `hostname`, `data`, and `modified_at` fields.
 4.  Run this script on a schedule (e.g., via a cron job) to keep your cache fresh.
-
 
 ## 🛠️ Tech Stack
 
@@ -123,17 +130,18 @@ The PostgreSQL database acts as a high-performance cache. It's designed to be po
 - **Backend (for DB & AWX sources)**:
   - **Framework**: Node.js with Express
   - **Database Driver**: `pg` (node-postgres)
+  - **AI Integration**: [Ollama](https://ollama.com/) for local LLM inference.
   - **Middleware**: `cors` for handling cross-origin requests.
 
-## ⚙️ Automated Installation (Linux)
+## 🚀 One-Command Installation (Recommended for Linux)
 
 For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), a powerful automated installation script is provided to streamline the entire deployment process.
 
 **Script Features**:
-- **One-Command Backend Setup**: Installs and configures Nginx, PostgreSQL, and the Node.js backend service.
-- **Interactive Configuration**: Prompts for your AWX URL and token during setup, eliminating manual file editing.
-- **Automated Security**: Generates a strong, random password for the database user and securely stores it.
-- **Firewall Management**: Automatically opens the necessary HTTP port if `firewalld` is active.
+- **One-Command Backend Stack**: Installs and configures Nginx, PostgreSQL, and the Node.js backend service.
+- **Interactive Configuration**: Prompts for your AWX URL/token and optional Ollama configuration, eliminating manual file editing.
+- **Automated Security**: Generates self-signed SSL certificates for Nginx (HTTPS out-of-the-box) and sets up a dedicated, password-protected database user.
+- **Firewall Management**: Automatically opens the necessary HTTP/HTTPS ports if `firewalld` is active.
 - **Clean Uninstall**: A dedicated command to completely remove all application components and data.
 - **Status Checks**: Easily verify that all services are running correctly.
 
@@ -143,7 +151,7 @@ For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), a
 
 -   A RHEL-based Linux distribution with `dnf`.
 -   `sudo` privileges.
--   `git`, `npm`, and `node` must be installed. The script will verify their presence.
+-   `git`, `npm`, and `node` must be installed.
 
 ### Recommended Installation Procedure
 
@@ -163,81 +171,60 @@ For users on RHEL-based systems (like Rocky Linux, AlmaLinux, CentOS, Fedora), a
     chmod +x install.sh
     ```
 
-3.  **Run the All-in-One Backend Installer:**
-    This single command handles the entire backend stack. It will prompt you for your AWX configuration details.
+3.  **Run the All-in-One Installer:**
+    This single command handles the entire stack. It will prompt you for your configuration details.
     ```bash
     sudo ./install.sh all
     ```
-    At the end of the process, an **Installation Summary** will be displayed, including the **auto-generated database password**. **Save this password in a secure location.**
-
-4.  **Build and Deploy the Frontend:**
-    After the backend is running, build the React application and deploy it using the script.
-    ```bash
-    # Install dependencies and create the production build
-    npm install && npm run build
-
-    # Use the script to deploy the built files to Nginx
-    sudo ./install.sh frontend
-    ```
-    Your application should now be live and accessible via your server's IP address or hostname.
+    At the end of the process, an **Installation Summary** will be displayed. Your application should now be live and accessible via `https://<your_server_ip>`.
 
 ### Script Command Reference
 
 The script accepts several commands to manage different parts of the application:
 
 -   `sudo ./install.sh all`
-    -   The recommended command for first-time setup. Installs and configures PostgreSQL, Nginx, and the backend API service in one go.
+    -   The recommended command for first-time setup. Installs and configures PostgreSQL, Nginx (with HTTPS), the backend API service, and deploys the frontend.
 
 -   `sudo ./install.sh frontend`
     -   Builds the React app (if not already built) and deploys the static files to the Nginx webroot (`/app/afe`).
 
--   `sudo ./install.sh postgres`
-    -   Installs and configures PostgreSQL only. Creates the database and a dedicated user.
-
--   `sudo ./install.sh nginx`
-    -   Installs and configures Nginx as a reverse proxy for the backend and serves the frontend.
-
 -   `sudo ./install.sh status`
-    -   Checks and displays the current status of the `nginx` and `afe-api` systemd services.
+    -   Checks and displays the current status of the `nginx`, `postgresql`, and `afe-api` systemd services.
 
 -   `sudo ./install.sh uninstall`
     -   Provides a safe, interactive way to completely remove the application. It will stop services, delete all configuration files and application directories, and optionally remove the PostgreSQL database and user.
 
-*Note: The `backend` command cannot be run standalone because it relies on the auto-generated password from the `postgres` or `all` step. Always use `all` for the initial backend setup.*
+*Note: The `postgres` and `nginx` commands are available for debugging but `all` is the recommended path for initial setup.*
 
 ### Post-Installation
 
--   **Configuration File**: All backend settings, including your AWX token and the generated database password, are stored in `/etc/afe-api.env`. You can edit this file if you need to change your configuration.
--   **Restarting the Service**: If you manually edit the environment file, you must restart the backend service to apply the changes: `sudo systemctl restart afe-api.service`.
+-   **Backend Configuration**: The backend configuration generated by the script is located at `/data/afe-api/config.js`. You can review it, but manual edits are not recommended.
+-   **Restarting the Service**: If you need to restart the backend for any reason: `sudo systemctl restart afe-api.service`.
 -   **Data Population**: Remember to populate your PostgreSQL database as described in the **Data Population Strategy** section.
 
-
-## 🚀 Getting Started: Manual Installation & Setup
+## ⚙️ Manual Installation & Setup
 
 This guide provides detailed instructions for manually setting up and running the Ansible Facts Explorer application.
 
 ### Project Structure Overview
 
-The repository is structured as a monorepo for convenience:
+-   `/` (root): Contains the React frontend application.
+-   `/fact-api-backend/`: Contains the Node.js backend server.
 
--   `/` (root): Contains the React frontend application files (`index.html`, `index.tsx`, `components/`, etc.).
--   `/fact-api-backend/`: Contains the Node.js backend server, which securely connects to data sources like AWX and PostgreSQL.
-
-The frontend and backend are separate applications. The frontend runs in the user's browser, and the backend runs on a server. They communicate via a REST API. For ease of development, you can run them on the same machine.
+The frontend runs in the user's browser, and the backend runs on a server. They communicate via a REST API.
 
 ### Prerequisites
 
--   **Node.js & npm**: Required to run the backend server and build the frontend.
--   **Data Source**: You'll need access to at least one of the following:
-    -   An Ansible AWX instance with an API token.
-    -   A PostgreSQL server with a database populated with facts.
--   **Web Server (Recommended)**: A web server like **Nginx** is recommended for a production-like setup to serve the frontend files and proxy API requests.
+-   **Node.js & npm**: Required to run the backend and build the frontend.
+-   **Data Source**: Access to an Ansible AWX instance or a PostgreSQL server.
+-   **Ollama (Optional)**: If you want to use the AI search feature, you need a running Ollama instance accessible from the backend server.
+-   **Web Server (Recommended)**: A web server like **Nginx** is recommended for production to serve the frontend and proxy API requests.
 
 ---
 
 ### Step 1: Backend Setup
 
-The backend is the data hub. It must be configured and running before the frontend can fetch any data (other than the demo data).
+The backend is the data hub. It must be configured and running before the frontend can fetch any data.
 
 1.  **Navigate to the backend directory:**
     ```bash
@@ -250,9 +237,7 @@ The backend is the data hub. It must be configured and running before the fronte
     ```
 
 3.  **Configure Environment Variables**:
-    Create a file named `.env` in the `fact-api-backend/` directory. This file will store your secret credentials. **Do not commit this file to version control.**
-
-    Copy and paste the following template into your `.env` file and fill in the values for the data sources you intend to use.
+    Create a file named `.env` in the `fact-api-backend/` directory. **Do not commit this file to version control.** Copy the template below and fill in your values.
 
     ```dotenv
     # --- For the "Live AWX" source ---
@@ -275,13 +260,17 @@ The backend is the data hub. It must be configured and running before the fronte
     # Database name
     DB_NAME=awx_facts
 
-    # --- To enable HTTPS on the backend server (optional) ---
-    # Path to your SSL certificate (e.g., fullchain.pem)
+    # --- AI Search Feature (Ollama) ---
+    # Set to 'true' to enable the AI search feature in the UI
+    USE_AI_SEARCH=false
+    # The full URL to your Ollama API endpoint
+    OLLAMA_URL=http://localhost:11434
+    # The name of the model Ollama should use (e.g., llama3.1, mistral)
+    OLLAMA_MODEL=llama3.1
+
+    # --- To enable HTTPS on the backend server (for advanced development) ---
     # SSL_CERT_PATH=
-    # Path to your SSL private key (e.g., privkey.pem)
     # SSL_KEY_PATH=
-    # Path to your Certificate Authority (CA) bundle
-    # SSL_CA_PATH=
     ```
     *Note: If you don't use a source, you can leave its variables blank, but the application will show that source as "not configured".*
 
@@ -289,140 +278,108 @@ The backend is the data hub. It must be configured and running before the fronte
     ```bash
     npm start
     ```
-    If successful, you will see a message like: `Backend server listening at http://localhost:4000`. The server is now ready to accept API requests from the frontend.
+    You should see: `Backend server listening at http://localhost:4000`.
 
 ---
 
 ### Step 2: Database Schema (for "Cached DB" source)
 
-If you are using the PostgreSQL data source, you must create the necessary table.
+If using PostgreSQL, connect to your instance and execute the following SQL to create the `facts` table.
 
-1.  Connect to your PostgreSQL instance and create a database (e.g., `awx_facts`).
-2.  Execute the following SQL command to create the `facts` table. The `modified_at` column is crucial for tracking data freshness.
-    ```sql
-    CREATE TABLE facts (
-        id SERIAL PRIMARY KEY,
-        hostname VARCHAR(255) UNIQUE NOT NULL,
-        data JSONB NOT NULL,
-        modified_at TIMESTAMP WITH TIME ZONE NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-    ```
-3.  Populate this table with your host facts. See the **Data Population Strategy** section for more details.
+```sql
+CREATE TABLE facts (
+    id SERIAL PRIMARY KEY,
+    hostname VARCHAR(255) UNIQUE NOT NULL,
+    data JSONB NOT NULL,
+    modified_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+See the **Data Population Strategy** section for details on populating this table.
 
 ---
 
-### Step 3: Frontend Setup
+### Step 3: Frontend Setup (Production-like with Nginx)
 
-The frontend is a static application that needs to be served to the user's browser. There are two primary ways to run it.
+Using a web server like Nginx is the most robust method. It correctly serves the static files and proxies API calls to the backend.
 
-#### Option A: Simple Local Testing (Quickest)
-
-For quick, simple testing *without* a web server, you can use a basic local development server.
-
-1.  Make sure you are in the project's root directory.
-2.  If you have Python installed, you can run a simple server:
+1.  **Build the Frontend**: From the project root directory, run:
     ```bash
-    # For Python 3
-    python -m http.server 8000
+    npm install && npm run build
     ```
-3.  Open your browser and navigate to `http://localhost:8000`.
+    This will create a `dist` directory with the static application files.
 
-*Note: Simply opening the `index.html` file directly (`file:///...`) may not work due to browser security restrictions on API requests.*
-
-#### Option B: Production-like Setup with Nginx (Recommended)
-
-Using a web server like Nginx is the most robust method. It correctly serves the static files and proxies API calls to the backend, avoiding common browser security issues like CORS or Mixed Content errors.
-
-1.  **Install Nginx**: If you don't have it, install Nginx on your system.
-
-2.  **Configure Nginx**: Create a new configuration file for your application (e.g., `/etc/nginx/sites-available/ansible-facts-explorer`). Paste the following configuration, adjusting paths and server names as needed.
+2.  **Install & Configure Nginx**: Install Nginx, then create a new site configuration.
 
     ```nginx
     server {
         listen 80;
         server_name your-domain.com localhost; # Or your server's IP
 
-        # Path to your frontend files
-        root /path/to/your/ansible-facts-explorer-project;
+        # Path to your built frontend files (the 'dist' directory)
+        root /path/to/your/ansible-facts-explorer/dist;
         index index.html;
 
-        # Standard location block to serve static files
         location / {
             try_files $uri $uri/ /index.html;
         }
 
         # API Proxy:
-        # This is the crucial part. It forwards any request starting with /api/
-        # to your backend server running on port 4000.
+        # Forwards any request starting with /api/ to your backend server.
         location /api/ {
             proxy_pass http://localhost:4000;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
         }
     }
     ```
-    -   Replace `/path/to/your/ansible-facts-explorer-project` with the absolute path to the project's root directory.
+    -   Replace `/path/to/your/ansible-facts-explorer/dist` with the absolute path.
 
-3.  **Enable the Site and Restart Nginx**:
-    ```bash
-    # Create a symbolic link to enable the site
-    sudo ln -s /etc/nginx/sites-available/ansible-facts-explorer /etc/nginx/sites-enabled/
+3.  **Enable the Site and Restart Nginx**.
 
-    # Test the configuration for syntax errors
-    sudo nginx -t
-
-    # If the test is successful, restart Nginx to apply the changes
-    sudo systemctl restart nginx
-    ```
-
-4.  **Access the Application**: Open your browser and navigate to `http://localhost` (or the server name you configured). Nginx will now serve the frontend, and any data-fetching requests will be correctly routed to your backend.
+4.  **Access the Application**: Open your browser and navigate to `http://localhost` (or the server name you configured).
 
 ## 📖 User Guide: How to Use the App
 
 1.  **Loading Data**:
-    -   Use the toggles in the header to select between "Live AWX", "Cached DB", or "Demo".
-    -   Click the **"Load Facts"** button. This will trigger the backend to fetch data from your selected source.
+    -   Use the toggles in the header to select "Live AWX", "Cached DB", or "Demo".
+    -   Click the **"Load Facts"** button.
 
-2.  **Exploring the Dashboard**:
-    -   Click the bar chart icon to toggle the dashboard for a high-level overview.
-    -   Configure the charts by clicking the cog icon to visualize the distribution of different facts. Add or remove charts to customize your view.
+2.  **Using AI Search**:
+    -   Click the **"AI"** button on the search bar to switch to AI mode. The bar will turn purple.
+    -   Type a natural language question about your infrastructure (e.g., "find all webservers in production" or "rocky linux hosts with 2 vcpus").
+    -   Press **Enter**. The AI will analyze your query and generate the appropriate filter pills.
+    -   You can then refine the search by adding more pills manually or asking another AI question.
+    -   Click the **"Classic"** button to switch back to manual filtering.
 
-3.  **Switching Views**:
-    -   Use the view switcher to toggle between the flat **List View** (good for global searching) and the host-centric **Pivot View** (ideal for comparing hosts side-by-side).
-
-4.  **Searching and Filtering**:
+3.  **Searching and Filtering (Classic Mode)**:
     -   Use the powerful search bar to drill down into your data. Examples:
         -   `Ubuntu`: Find all instances of the word "Ubuntu".
-        -   `role=webserver`: Find all hosts where `role` is `webserver`.
+        -   `role=webserver`: Find hosts where `role` is `webserver`.
         -   `vcpus > 4`: Find hosts with more than 4 vCPUs.
         -   `"22.04"`: Find an exact match for "22.04".
-    -   Click the filter icon to open the **Fact Filter** panel. Check or uncheck facts to control which columns are visible in the tables.
-    -   In **Pivot View**, you can also click the 'x' in a column header to hide it.
+    -   Click the filter icon to open the **Fact Filter** panel. Check or uncheck facts to control which columns are visible.
 
-5.  **Exporting Data**:
-    -   Click the export button to download the currently filtered data as a CSV or XLSX file. The export is smart—its format adapts to the active view (List or Pivot).
+4.  **Switching Views & Exporting**:
+    -   Use the view switcher to toggle between **List View** and **Pivot View**.
+    -   Click the export button to download the currently filtered data as a CSV or XLSX file. The export format adapts to the active view.
 
-6.  **Customizing the Look**:
-    -   Use the density, theme, and full-screen toggles to adjust the application's appearance to your preference.
+5.  **Customizing the Look**:
+    -   Use the density, theme, and full-screen toggles to adjust the application's appearance.
 
 ## 🤔 Troubleshooting
 
 -   **"Could not connect to the backend API" error**:
-    -   Ensure the backend server (`fact-api-backend`) is running. Check its terminal for any error messages.
-    -   Verify the server is running on `localhost:4000` or that the frontend has been updated to point to the correct address.
+    -   Ensure the backend server (`fact-api-backend`) is running. Check its terminal for errors.
+    -   If using Nginx, ensure it is running and the proxy configuration is correct.
 
--   **"CORS" error in browser console**:
-    -   The backend is configured to allow requests, but if you are running a complex network setup (e.g., proxies), ensure the `Origin` headers are being passed correctly.
+-   **"AI search failed"**:
+    -   Ensure your Ollama instance is running and accessible from the backend server at the URL specified in the backend configuration (`OLLAMA_URL`).
+    -   Verify that the model name (`OLLAMA_MODEL`) is correct and has been pulled (`ollama pull llama3.1`).
 
 -   **Data from a source fails to load (e.g., "AWX is not configured")**:
-    -   Double-check that the environment variables (`AWX_URL`, `AWX_TOKEN`, `DB_HOST`, etc.) are set correctly and exported in the terminal where you launched the backend server.
-    -   For the DB source, ensure your database is accessible and that the `facts` table exists with the correct schema.
-
--   **"Mixed Content" error in browser**:
-    -   This occurs when you try to connect to an `https` backend from an `http`-served frontend. To fix this, you must serve the frontend files (`index.html`, etc.) from a local web server that also uses HTTPS.
+    -   Double-check that the environment variables in `fact-api-backend/.env` (for manual setup) or the config at `/data/afe-api/config.js` (for script setup) are correct.
+    -   For the DB source, ensure your database is accessible and the `facts` table exists.
 
 ##  Authorship & Acknowledgements
 
