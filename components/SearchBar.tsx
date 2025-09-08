@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { QuestionMarkCircleIcon, FilterIcon, ClockIcon, XSmallIcon, ChevronLeftIcon, ChevronRightIcon, XCircleIcon } from './icons/Icons';
+import { QuestionMarkCircleIcon, FilterIcon, ClockIcon, XSmallIcon, ChevronLeftIcon, ChevronRightIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface SearchBarProps {
@@ -19,12 +19,14 @@ interface SearchBarProps {
   isAiEnabled: boolean;
 }
 
-const AiButton: React.FC<{ onClick: () => void, isLoading: boolean }> = ({ onClick, isLoading }) => (
+const AiButton: React.FC<{ onClick: () => void, isLoading: boolean, isActive: boolean }> = ({ onClick, isLoading, isActive }) => (
     <button
         type="button"
         onClick={onClick}
         disabled={isLoading}
-        className="flex-shrink-0 h-9 w-12 flex items-center justify-center rounded-l-full bg-slate-200 dark:bg-zinc-800 border-r border-slate-300 dark:border-zinc-700 relative overflow-hidden group disabled:cursor-wait"
+        className={`flex-shrink-0 h-9 w-12 flex items-center justify-center rounded-l-full border-r border-slate-300 dark:border-zinc-700 relative overflow-hidden group disabled:cursor-wait transition-colors ${
+            isActive ? 'bg-violet-200 dark:bg-violet-900/60' : 'bg-slate-200 dark:bg-zinc-800'
+        }`}
         title="Toggle AI Search"
     >
         <span className={`font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400 transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}>
@@ -80,7 +82,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
         event.preventDefault();
         if (isAiMode) {
             onAiSearch(searchInputValue.trim());
-            setIsAiMode(false); // Switch back to normal mode after search
+            setSearchInputValue(''); // Clear input for next AI query, but stay in AI mode
         } else {
             setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);
             setSearchInputValue('');
@@ -89,7 +91,8 @@ const SearchBar: React.FC<SearchBarProps> = ({
       setSearchPills(searchPills.slice(0, -1));
       event.preventDefault();
     } else if (isAiMode && event.key === 'Escape') {
-      setIsAiMode(false);
+      setIsAiMode(false); // Allow Esc to exit AI mode
+      setSearchInputValue('');
     }
   };
 
@@ -161,13 +164,17 @@ const SearchBar: React.FC<SearchBarProps> = ({
   return (
     <div className="w-full">
       <div
-        className={`flex items-center w-full bg-slate-200 dark:bg-zinc-800 rounded-full h-9 focus-within:ring-2 focus-within:ring-violet-500/70 dark:focus-within:ring-violet-400/70 transition-shadow duration-200 pr-2`}
+        className={`flex items-center w-full rounded-full h-9 focus-within:ring-2 focus-within:ring-violet-500/70 dark:focus-within:ring-violet-400/70 transition-all duration-200 pr-2 ${
+            isAiMode 
+            ? 'bg-violet-100 dark:bg-violet-950/40' 
+            : 'bg-slate-200 dark:bg-zinc-800'
+        }`}
       >
-        {isAiEnabled && <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} />}
+        {isAiEnabled && <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} isActive={isAiMode} />}
 
         {!isAiMode && (
           <>
-            <svg className={`h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ${isAiEnabled ? 'ml-3' : 'ml-4'}`} xmlns="http://www.w.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <svg className={`h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ${isAiEnabled ? 'ml-3' : 'ml-4'}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
 
@@ -235,16 +242,6 @@ const SearchBar: React.FC<SearchBarProps> = ({
         />
 
         <div className="flex items-center gap-1.5 pl-1 flex-shrink-0">
-          {isAiMode && (
-            <button
-              type="button"
-              onClick={() => setIsAiMode(false)}
-              className="p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/20 text-slate-500 dark:text-zinc-400"
-              title="Cancel AI Search (Esc)"
-            >
-              <XCircleIcon />
-            </button>
-          )}
           <button
             type="button"
             onClick={onFilterClick}
