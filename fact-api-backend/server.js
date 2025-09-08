@@ -10,6 +10,9 @@ const { dbConfig, awxConfig, sslConfig, ollamaConfig } = require('./config');
 const app = express();
 const port = 4000;
 
+// Initialize the PostgreSQL connection pool
+const pool = new Pool(dbConfig);
+
 // Allow requests from your frontend application
 app.use(cors());
 app.use(express.json()); // Middleware to parse JSON bodies
