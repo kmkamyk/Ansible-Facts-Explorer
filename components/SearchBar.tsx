@@ -82,7 +82,8 @@ const SearchBar: React.FC<SearchBarProps> = ({
         event.preventDefault();
         if (isAiMode) {
             onAiSearch(searchInputValue.trim(), () => {
-                setIsAiMode(false);
+                // After a successful AI search, remain in AI mode for subsequent queries.
+                // The input field is cleared within the handleAiSearch function.
             });
         } else {
             setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);

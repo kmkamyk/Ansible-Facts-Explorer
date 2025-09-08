@@ -329,8 +329,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setError(null);
     try {
         const filters = await apiService.performAiSearch(prompt, allFactPaths);
-        // AI returns a complete new set of filters, so we replace the existing ones.
-        setSearchPills(filters);
+        // Append the new filters from AI to the existing ones, allowing for search refinement.
+        setSearchPills(prevPills => [...new Set([...prevPills, ...filters])]);
         setSearchInputValue(''); // Clear the input after search
         onSuccess();
     } catch (e: any) {
