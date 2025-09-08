@@ -1,20 +1,18 @@
 // server.js
 
 const express = require('express');
-const https = require('https');
+const https = require('https'');
 const fs = require('fs');
 const { Pool } = require('pg');
 const cors = require('cors');
-const { dbConfig, awxConfig, sslConfig } = require('./config');
+const { dbConfig, awxConfig, sslConfig, ollamaConfig } = require('./config');
 
 const app = express();
 const port = 4000;
 
 // Allow requests from your frontend application
 app.use(cors());
-
-// Database connection pool
-const pool = new Pool(dbConfig);
+app.use(express.json()); // Middleware to parse JSON bodies
 
 
 // --- Helper function to count facts in a way that matches frontend's row count ---
@@ -277,6 +275,82 @@ app.get('/api/facts', async (req, res) => {
     res.status(500).json({ error: err.message || 'Failed to fetch data from the specified source.' });
   }
 });
+
+// --- New AI Search Endpoint ---
+app.post('/api/ai-search', async (req, res) => {
+    const { prompt, allFactPaths } = req.body;
+
+    if (!ollamaConfig.url) {
+        return res.status(500).json({ error: 'Ollama service is not configured on the backend.' });
+    }
+    if (!prompt || !allFactPaths) {
+        return res.status(400).json({ error: 'Missing prompt or allFactPaths in request body.' });
+    }
+
+    const systemPrompt = `You are an AI assistant for Ansible Facts Explorer. Your task is to convert a user's natural language query into structured search filters.
+The available fact paths are: ${JSON.stringify(allFactPaths)}.
+The user's query is: "${prompt}".
+
+Based on the query, generate a list of search filters. Each filter should follow one of these formats:
+1. A simple string for a general search (e.g., "webserver").
+2. A key-value pair with an operator (e.g., "ansible_distribution=Ubuntu", "ansible_processor_vcpus>4", "role!=database"). Use quotes for values with spaces (e.g., 'ansible_distribution="Rocky Linux"').
+3. An exact match search by wrapping the value in double quotes (e.g., '"22.04"').
+
+Only use fact paths from the provided list as keys in your filters. Prioritize creating precise key-value filters over general string searches.
+Respond ONLY with a valid JSON array of strings representing the filters. For example: ["environment=production", "role=webserver", "ansible_distribution=\"Rocky Linux\""]`;
+
+    try {
+        console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
+        const ollamaResponse = await fetch(`${ollamaConfig.url}/api/generate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: ollamaConfig.model,
+                prompt: systemPrompt,
+                stream: false, // Ensure we get a single JSON response
+            }),
+        });
+
+        if (!ollamaResponse.ok) {
+            const errorBody = await ollamaResponse.text();
+            console.error(`[AI Search] Ollama API error: ${ollamaResponse.status} ${ollamaResponse.statusText}`, errorBody);
+            throw new Error(`Ollama API returned an error: ${ollamaResponse.statusText}`);
+        }
+
+        const ollamaData = await ollamaResponse.json();
+        const responseText = ollamaData.response;
+
+        console.log('[AI Search] Raw response from Ollama:', responseText);
+
+        // The model is instructed to return ONLY a JSON array, but let's be safe.
+        // Find the start and end of the JSON array in the response string.
+        const jsonStart = responseText.indexOf('[');
+        const jsonEnd = responseText.lastIndexOf(']');
+
+        if (jsonStart === -1 || jsonEnd === -1) {
+            console.error('[AI Search] Could not find a JSON array in the Ollama response.');
+            throw new Error('AI model did not return a valid filter format.');
+        }
+
+        const jsonString = responseText.substring(jsonStart, jsonEnd + 1);
+        
+        const filters = JSON.parse(jsonString);
+        
+        if (!Array.isArray(filters) || !filters.every(item => typeof item === 'string')) {
+            throw new Error('AI model returned data that is not an array of strings.');
+        }
+
+        console.log('[AI Search] Parsed filters:', filters);
+        res.json(filters);
+
+    } catch (error) {
+        console.error('[AI Search] Error processing AI search:', error.message);
+        res.status(500).json({ error: error.message || 'Failed to process AI search request.' });
+    }
+});
+
 
 // Start the server
 if (sslConfig.keyPath && sslConfig.certPath) {

@@ -194,6 +194,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [searchPills, setSearchPills] = useState<string[]>([]);
   const [searchInputValue, setSearchInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModifiedColumn, setShowModifiedColumn] = useState(false);
   
@@ -319,6 +320,24 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         setIsLoading(false);
     }
   }, [dataSource]);
+
+  const handleAiSearch = useCallback(async (prompt: string) => {
+    if (!prompt || allFactPaths.length === 0) return;
+
+    setIsAiLoading(true);
+    setError(null);
+    try {
+        const filters = await apiService.performAiSearch(prompt, allFactPaths);
+        // AI returns a complete new set of filters, so we replace the existing ones.
+        setSearchPills(filters);
+        setSearchInputValue(''); // Clear the input after search
+    } catch (e: any) {
+        setError(e.message || 'AI search failed.');
+        console.error(e);
+    } finally {
+        setIsAiLoading(false);
+    }
+  }, [allFactPaths]);
 
   const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
     const stringValue = String(value).trim();
@@ -720,6 +739,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     totalFactCount={allFactPaths.length}
                     showModifiedColumn={showModifiedColumn}
                     onToggleModifiedColumn={() => setShowModifiedColumn(!showModifiedColumn)}
+                    onAiSearch={handleAiSearch}
+                    isAiLoading={isAiLoading}
                   />
                   <p className={`text-xs text-slate-500 dark:text-zinc-400 pt-2`}>
                     Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.

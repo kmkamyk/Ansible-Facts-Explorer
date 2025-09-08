@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { QuestionMarkCircleIcon, FilterIcon, ClockIcon, XSmallIcon, ChevronLeftIcon, ChevronRightIcon } from './icons/Icons';
+import { QuestionMarkCircleIcon, FilterIcon, ClockIcon, XSmallIcon, ChevronLeftIcon, ChevronRightIcon, XCircleIcon } from './icons/Icons';
+import Spinner from './Spinner';
 
 interface SearchBarProps {
   searchPills: string[];
@@ -13,7 +14,28 @@ interface SearchBarProps {
   totalFactCount: number;
   showModifiedColumn: boolean;
   onToggleModifiedColumn: () => void;
+  onAiSearch: (prompt: string) => void;
+  isAiLoading: boolean;
 }
+
+const AiButton: React.FC<{ onClick: () => void, isLoading: boolean }> = ({ onClick, isLoading }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={isLoading}
+        className="flex-shrink-0 h-9 w-12 flex items-center justify-center rounded-l-full bg-slate-200 dark:bg-zinc-800 border-r border-slate-300 dark:border-zinc-700 relative overflow-hidden group disabled:cursor-wait"
+        title="Toggle AI Search"
+    >
+        <span className={`font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400 transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}>
+            AI
+        </span>
+        {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-200 dark:bg-zinc-800">
+                <Spinner className="w-5 h-5" />
+            </div>
+        )}
+    </button>
+);
 
 const SearchBar: React.FC<SearchBarProps> = ({
   searchPills,
@@ -27,25 +49,45 @@ const SearchBar: React.FC<SearchBarProps> = ({
   totalFactCount,
   showModifiedColumn,
   onToggleModifiedColumn,
+  onAiSearch,
+  isAiLoading,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [isAiMode, setIsAiMode] = useState(false);
   
   const handleRemovePill = (pillToRemove: string) => {
     setSearchPills(searchPills.filter(pill => pill !== pillToRemove));
   };
   
+  const handleToggleAiMode = () => {
+    setIsAiMode(prev => !prev);
+    setSearchInputValue(''); // Clear input on mode switch
+  };
+
+  useEffect(() => {
+      if (isAiMode) {
+          inputRef.current?.focus();
+      }
+  }, [isAiMode]);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && searchInputValue.trim() !== '') {
-      // Add new pill, avoiding duplicates
-      setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);
-      setSearchInputValue('');
-      event.preventDefault();
-    } else if (event.key === 'Backspace' && searchInputValue === '' && searchPills.length > 0) {
-      // Remove the last pill if backspace is pressed in an empty input
+        event.preventDefault();
+        if (isAiMode) {
+            onAiSearch(searchInputValue.trim());
+            setIsAiMode(false); // Switch back to normal mode after search
+        } else {
+            setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);
+            setSearchInputValue('');
+        }
+    } else if (!isAiMode && event.key === 'Backspace' && searchInputValue === '' && searchPills.length > 0) {
       setSearchPills(searchPills.slice(0, -1));
       event.preventDefault();
+    } else if (isAiMode && event.key === 'Escape') {
+      setIsAiMode(false);
     }
   };
 
@@ -117,73 +159,90 @@ const SearchBar: React.FC<SearchBarProps> = ({
   return (
     <div className="w-full">
       <div
-        className={`flex items-center gap-2 w-full bg-slate-200 dark:bg-zinc-800 rounded-full h-9 pl-3 pr-2 focus-within:ring-2 focus-within:ring-violet-500/70 dark:focus-within:ring-violet-400/70 transition-shadow duration-200`}
+        className={`flex items-center w-full bg-slate-200 dark:bg-zinc-800 rounded-full h-9 focus-within:ring-2 focus-within:ring-violet-500/70 dark:focus-within:ring-violet-400/70 transition-shadow duration-200 pr-2`}
       >
-        <svg className="h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-        </svg>
+        <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} />
 
-        <div className="flex items-center gap-2 flex-shrink min-w-0">
-          {canScrollLeft && (
-              <button
-                  type="button"
-                  onClick={() => handleScroll('left')}
-                  className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
-                  aria-label="Scroll left"
-              >
-                  <ChevronLeftIcon />
-              </button>
-          )}
+        {!isAiMode && (
+          <>
+            <svg className="h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ml-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+            </svg>
 
-          <div 
-              ref={scrollContainerRef}
-              onScroll={checkScrollability}
-              className="flex items-center gap-2 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-          >
-              {searchPills.map(pill => (
-              <span
-                  key={pill}
-                  className={`flex-shrink-0 flex items-center gap-1.5 py-0.5 pl-2.5 pr-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                  !isRegexValid(pill) 
-                      ? 'bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-300 ring-1 ring-red-500/30'
-                      : 'bg-slate-300 text-slate-800 dark:bg-zinc-700 dark:text-zinc-200'
-                  }`}
-              >
-                  {pill}
+            <div className="flex items-center gap-2 flex-shrink min-w-0">
+              {canScrollLeft && (
                   <button
-                  type="button"
-                  onClick={() => handleRemovePill(pill)}
-                  className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:bg-black/20 dark:focus:bg-white/30 transition-colors"
-                  aria-label={`Remove filter: ${pill}`}
+                      type="button"
+                      onClick={() => handleScroll('left')}
+                      className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
+                      aria-label="Scroll left"
                   >
-                  <XSmallIcon />
+                      <ChevronLeftIcon />
                   </button>
-              </span>
-              ))}
-          </div>
+              )}
 
-          {canScrollRight && (
-              <button
-                  type="button"
-                  onClick={() => handleScroll('right')}
-                  className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
-                  aria-label="Scroll right"
+              <div 
+                  ref={scrollContainerRef}
+                  onScroll={checkScrollability}
+                  className="flex items-center gap-2 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               >
-                  <ChevronRightIcon />
-              </button>
-          )}
-        </div>
+                  {searchPills.map(pill => (
+                  <span
+                      key={pill}
+                      className={`flex-shrink-0 flex items-center gap-1.5 py-0.5 pl-2.5 pr-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                      !isRegexValid(pill) 
+                          ? 'bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-300 ring-1 ring-red-500/30'
+                          : 'bg-slate-300 text-slate-800 dark:bg-zinc-700 dark:text-zinc-200'
+                      }`}
+                  >
+                      {pill}
+                      <button
+                      type="button"
+                      onClick={() => handleRemovePill(pill)}
+                      className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:bg-black/20 dark:focus:bg-white/30 transition-colors"
+                      aria-label={`Remove filter: ${pill}`}
+                      >
+                      <XSmallIcon />
+                      </button>
+                  </span>
+                  ))}
+              </div>
+
+              {canScrollRight && (
+                  <button
+                      type="button"
+                      onClick={() => handleScroll('right')}
+                      className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
+                      aria-label="Scroll right"
+                  >
+                      <ChevronRightIcon />
+                  </button>
+              )}
+            </div>
+          </>
+        )}
 
         <input
+            ref={inputRef}
             type="text"
-            placeholder={searchPills.length === 0 ? "Search facts..." : "Add filter..."}
+            placeholder={isAiMode ? "Ask AI to find facts... (e.g., 'all ubuntu hosts with 4 cpus')" : (searchPills.length === 0 ? "Search facts..." : "Add filter...")}
             value={searchInputValue}
             onChange={(e) => setSearchInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-grow bg-transparent text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none min-w-[100px] py-1"
+            className={`flex-grow bg-transparent text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none min-w-[100px] py-1 ${isAiMode ? 'pl-3' : 'pl-2'}`}
         />
 
         <div className="flex items-center gap-1.5 pl-1 flex-shrink-0">
+          {isAiMode && (
+            <button
+              type="button"
+              onClick={() => setIsAiMode(false)}
+              className="p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/20 text-slate-500 dark:text-zinc-400"
+              title="Cancel AI Search (Esc)"
+            >
+              <XCircleIcon />
+            </button>
+          )}
           <button
             type="button"
             onClick={onFilterClick}

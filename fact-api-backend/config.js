@@ -25,6 +25,12 @@ const awxConfig = {
   requestTimeout: parseInt(process.env.AWX_REQUEST_TIMEOUT || '30000', 10), // 30 seconds
 };
 
+// Configuration for the Ollama API endpoint
+const ollamaConfig = {
+  url: process.env.OLLAMA_URL || 'http://192.168.1.173:11434',
+  model: process.env.OLLAMA_MODEL || 'llama3.1',
+};
+
 // SSL config is handled explicitly by the install.sh script for production.
 // This section is for advanced local HTTPS development if needed.
 const sslConfig = {
@@ -37,4 +43,5 @@ module.exports = {
   dbConfig,
   awxConfig,
   sslConfig,
+  ollamaConfig,
 };

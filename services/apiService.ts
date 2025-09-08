@@ -53,5 +53,32 @@ export const apiService = {
       }
       throw error;
     }
+  },
+
+  performAiSearch: async (prompt: string, allFactPaths: string[]): Promise<string[]> => {
+    const aiUrl = `${API_BASE_URL}/ai-search`;
+    console.log('Performing AI search with prompt:', prompt);
+    try {
+        const response = await fetch(aiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prompt, allFactPaths }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `AI search failed: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Error during AI search API call:', error);
+        if (error instanceof TypeError) {
+            throw new Error('Could not connect to the backend for AI search.');
+        }
+        throw error;
+    }
   }
 };
