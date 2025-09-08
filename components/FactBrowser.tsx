@@ -322,7 +322,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     }
   }, [dataSource]);
 
-  const handleAiSearch = useCallback(async (prompt: string) => {
+  const handleAiSearch = useCallback(async (prompt: string, onSuccess: () => void) => {
     if (!prompt || allFactPaths.length === 0) return;
 
     setIsAiLoading(true);
@@ -332,6 +332,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         // AI returns a complete new set of filters, so we replace the existing ones.
         setSearchPills(filters);
         setSearchInputValue(''); // Clear the input after search
+        onSuccess();
     } catch (e: any) {
         setError(e.message || 'AI search failed.');
         console.error(e);

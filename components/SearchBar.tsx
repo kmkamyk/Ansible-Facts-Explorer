@@ -14,7 +14,7 @@ interface SearchBarProps {
   totalFactCount: number;
   showModifiedColumn: boolean;
   onToggleModifiedColumn: () => void;
-  onAiSearch: (prompt: string) => void;
+  onAiSearch: (prompt: string, onSuccess: () => void) => void;
   isAiLoading: boolean;
   isAiEnabled: boolean;
 }
@@ -81,8 +81,9 @@ const SearchBar: React.FC<SearchBarProps> = ({
     if (event.key === 'Enter' && searchInputValue.trim() !== '') {
         event.preventDefault();
         if (isAiMode) {
-            onAiSearch(searchInputValue.trim());
-            setSearchInputValue(''); // Clear input for next AI query, but stay in AI mode
+            onAiSearch(searchInputValue.trim(), () => {
+                setIsAiMode(false);
+            });
         } else {
             setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);
             setSearchInputValue('');
