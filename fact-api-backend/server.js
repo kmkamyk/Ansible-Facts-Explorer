@@ -279,7 +279,7 @@ app.get('/api/facts', async (req, res) => {
   }
 });
 
-// --- New AI Search Endpoint ---
+// --- New AI Search Endpoint (updated based on user feedback for better results) ---
 app.post('/api/ai-search', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
         return res.status(403).json({ error: 'AI search feature is disabled by the administrator.' });
@@ -307,11 +307,11 @@ The supported filter syntax is:
 - "term1|term2": for an OR condition within a single filter pill.
 
 Rules:
-1.  You MUST respond with ONLY a valid JSON array of strings. Do not add any explanation, preamble, or markdown formatting.
-2.  Analyze the user's query and break it down into the most specific and accurate filter pills possible.
-3.  Use the 'key=value' syntax whenever possible, referencing the provided list of fact paths.
-4.  If a user mentions a specific version number or a value that needs to be exact, use the key="value" syntax.
-5.  If the user's intent is unclear, generate the most likely set of filters.
+- You MUST respond with ONLY a valid JSON array of strings. Do not add any explanation, preamble, or markdown formatting.
+- Analyze the user's query and break it down into the most specific and accurate filter pills possible.
+- Use the 'key=value' syntax whenever possible, referencing the provided list of fact paths.
+- If a user mentions a specific version number or a value that needs to be exact, use the key="value" syntax.
+- If the user's intent is unclear, generate the most likely set of filters.
 
 User Query: "${prompt}"
 
@@ -332,9 +332,9 @@ Your JSON Response:`;
         });
 
         if (!ollamaResponse.ok) {
-            const errorBody = await ollamaResponse.text();
-            console.error(`[AI Search] Ollama API error: ${ollamaResponse.status} ${ollamaResponse.statusText}`, errorBody);
-            throw new Error(`Ollama API returned an error: ${ollamaResponse.statusText}`);
+            const errorText = await ollamaResponse.text();
+            console.error(`[AI Search] Ollama API responded with error ${ollamaResponse.status}: ${errorText}`);
+            throw new Error(`Ollama API error: ${ollamaResponse.statusText}`);
         }
 
         const ollamaData = await ollamaResponse.json();
@@ -348,15 +348,15 @@ Your JSON Response:`;
 
         // Clean the response: remove markdown backticks and trim whitespace
         const cleanedContent = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
-  
+
         try {
-            const filters = JSON.parse(cleanedContent);
-            if (!Array.isArray(filters) || !filters.every(item => typeof item === 'string')) {
-                console.error('[AI Search] Parsed content is not a valid array of strings:', filters);
-                throw new Error('AI did not return a valid JSON array of strings.');
+            const pills = JSON.parse(cleanedContent);
+            if (!Array.isArray(pills)) {
+                console.error('[AI Search] Parsed content is not an array:', pills);
+                throw new Error('AI did not return a valid JSON array.');
             }
-            console.log('[AI Search] Successfully generated filters:', filters);
-            res.json(filters);
+            console.log('[AI Search] Successfully generated pills:', pills);
+            res.json(pills);
         } catch (parseError) {
             console.error('[AI Search] Failed to parse JSON from model response:', parseError.message);
             console.error('[AI Search] Cleaned content was:', cleanedContent);
@@ -364,13 +364,9 @@ Your JSON Response:`;
             const jsonMatch = cleanedContent.match(/\[.*\]/s);
             if (jsonMatch && jsonMatch[0]) {
                 try {
-                    const fallbackFilters = JSON.parse(jsonMatch[0]);
-                    if (!Array.isArray(fallbackFilters) || !fallbackFilters.every(item => typeof item === 'string')) {
-                         console.error('[AI Search] Fallback parsed content is not a valid array of strings:', fallbackFilters);
-                         throw new Error('AI did not return a valid JSON array of strings, even with fallback.');
-                    }
-                    console.log('[AI Search] Successfully extracted filters with fallback regex:', fallbackFilters);
-                    res.json(fallbackFilters);
+                    const fallbackPills = JSON.parse(jsonMatch[0]);
+                    console.log('[AI Search] Successfully extracted pills with fallback regex:', fallbackPills);
+                    res.json(fallbackPills);
                     return;
                 } catch (fallbackError) {
                     console.error('[AI Search] Fallback JSON parsing also failed.');
@@ -379,9 +375,9 @@ Your JSON Response:`;
             throw new Error('AI returned content that could not be parsed as JSON.');
         }
 
-    } catch (error) {
-        console.error('[AI Search] Error processing AI search:', error.message);
-        res.status(500).json({ error: error.message || 'Failed to process AI search request.' });
+    } catch (err) {
+        console.error(`[AI Search] Error during Ollama request:`, err);
+        res.status(500).json({ error: err.message || 'Failed to generate search pills from AI.' });
     }
 });
 
