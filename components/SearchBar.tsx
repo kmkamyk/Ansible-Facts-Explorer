@@ -19,21 +19,25 @@ interface SearchBarProps {
   isAiEnabled: boolean;
 }
 
-const AiButton: React.FC<{ onClick: () => void, isLoading: boolean, isActive: boolean }> = ({ onClick, isLoading, isActive }) => (
+const SearchModeButton: React.FC<{ onClick: () => void, isLoading: boolean, isAiMode: boolean }> = ({ onClick, isLoading, isAiMode }) => (
     <button
         type="button"
         onClick={onClick}
         disabled={isLoading}
-        className={`flex-shrink-0 h-9 w-12 flex items-center justify-center rounded-l-full border-r border-slate-300 dark:border-zinc-700 relative overflow-hidden group disabled:cursor-wait transition-colors ${
-            isActive ? 'bg-violet-200 dark:bg-violet-900/60' : 'bg-slate-200 dark:bg-zinc-800'
+        className={`flex-shrink-0 h-9 w-20 flex items-center justify-center rounded-l-full border-r border-slate-300 dark:border-zinc-700 relative overflow-hidden group disabled:cursor-wait transition-colors ${
+            isAiMode ? 'bg-violet-200 dark:bg-violet-900/60' : 'bg-slate-200 dark:bg-zinc-800'
         }`}
-        title="Toggle AI Search"
+        title={isAiMode ? "Switch to Classic Search" : "Switch to AI Search"}
     >
-        <span className={`font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400 transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}>
-            AI
+        <span className={`font-semibold transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'} ${
+            isAiMode 
+                ? 'text-slate-700 dark:text-zinc-200' 
+                : 'bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400'
+        }`}>
+            {isAiMode ? 'Classic' : 'AI'}
         </span>
         {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-200 dark:bg-zinc-800">
+            <div className={`absolute inset-0 flex items-center justify-center ${isAiMode ? 'bg-violet-200 dark:bg-violet-900/60' : 'bg-slate-200 dark:bg-zinc-800'}`}>
                 <Spinner className="w-5 h-5" />
             </div>
         )}
@@ -172,7 +176,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
             : 'bg-slate-200 dark:bg-zinc-800'
         }`}
       >
-        {isAiEnabled && <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} isActive={isAiMode} />}
+        {isAiEnabled && <SearchModeButton onClick={handleToggleAiMode} isLoading={isAiLoading} isAiMode={isAiMode} />}
 
         <svg className={`h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ${isAiEnabled ? 'ml-3' : 'ml-4'}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
