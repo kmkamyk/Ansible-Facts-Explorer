@@ -174,64 +174,60 @@ const SearchBar: React.FC<SearchBarProps> = ({
       >
         {isAiEnabled && <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} isActive={isAiMode} />}
 
-        {!isAiMode && (
-          <>
-            <svg className={`h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ${isAiEnabled ? 'ml-3' : 'ml-4'}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-            </svg>
+        <svg className={`h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ${isAiEnabled ? 'ml-3' : 'ml-4'}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+        </svg>
 
-            <div className="flex items-center gap-2 flex-shrink min-w-0">
-              {canScrollLeft && (
-                  <button
-                      type="button"
-                      onClick={() => handleScroll('left')}
-                      className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
-                      aria-label="Scroll left"
-                  >
-                      <ChevronLeftIcon />
-                  </button>
-              )}
-
-              <div 
-                  ref={scrollContainerRef}
-                  onScroll={checkScrollability}
-                  className="flex items-center gap-2 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        <div className="flex items-center gap-2 flex-shrink min-w-0">
+          {canScrollLeft && (
+              <button
+                  type="button"
+                  onClick={() => handleScroll('left')}
+                  className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
+                  aria-label="Scroll left"
               >
-                  {searchPills.map(pill => (
-                  <span
-                      key={pill}
-                      className={`flex-shrink-0 flex items-center gap-1.5 py-0.5 pl-2.5 pr-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                      !isRegexValid(pill) 
-                          ? 'bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-300 ring-1 ring-red-500/30'
-                          : 'bg-slate-300 text-slate-800 dark:bg-zinc-700 dark:text-zinc-200'
-                      }`}
-                  >
-                      {pill}
-                      <button
-                      type="button"
-                      onClick={() => handleRemovePill(pill)}
-                      className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:bg-black/20 dark:focus:bg-white/30 transition-colors"
-                      aria-label={`Remove filter: ${pill}`}
-                      >
-                      <XSmallIcon />
-                      </button>
-                  </span>
-                  ))}
-              </div>
+                  <ChevronLeftIcon />
+              </button>
+          )}
 
-              {canScrollRight && (
+          <div 
+              ref={scrollContainerRef}
+              onScroll={checkScrollability}
+              className="flex items-center gap-2 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
+              {searchPills.map(pill => (
+              <span
+                  key={pill}
+                  className={`flex-shrink-0 flex items-center gap-1.5 py-0.5 pl-2.5 pr-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                  !isRegexValid(pill) 
+                      ? 'bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-300 ring-1 ring-red-500/30'
+                      : 'bg-slate-300 text-slate-800 dark:bg-zinc-700 dark:text-zinc-200'
+                  }`}
+              >
+                  {pill}
                   <button
-                      type="button"
-                      onClick={() => handleScroll('right')}
-                      className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
-                      aria-label="Scroll right"
+                  type="button"
+                  onClick={() => handleRemovePill(pill)}
+                  className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:bg-black/20 dark:focus:bg-white/30 transition-colors"
+                  aria-label={`Remove filter: ${pill}`}
                   >
-                      <ChevronRightIcon />
+                  <XSmallIcon />
                   </button>
-              )}
-            </div>
-          </>
-        )}
+              </span>
+              ))}
+          </div>
+
+          {canScrollRight && (
+              <button
+                  type="button"
+                  onClick={() => handleScroll('right')}
+                  className="flex-shrink-0 p-0.5 rounded-full bg-slate-300/50 hover:bg-slate-400/50 dark:bg-zinc-700/50 dark:hover:bg-zinc-600/50 text-slate-700 dark:text-zinc-200 transition-colors"
+                  aria-label="Scroll right"
+              >
+                  <ChevronRightIcon />
+              </button>
+          )}
+        </div>
 
         <input
             ref={inputRef}
@@ -240,7 +236,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
             value={searchInputValue}
             onChange={(e) => setSearchInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            className={`flex-grow bg-transparent text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none min-w-[100px] py-1 ${isAiMode ? 'pl-3' : (isAiEnabled ? 'pl-2' : 'pl-3')}`}
+            className={`flex-grow bg-transparent text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none min-w-[100px] py-1 pl-2`}
         />
 
         <div className="flex items-center gap-1.5 pl-1 flex-shrink-0">
