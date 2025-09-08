@@ -179,3 +179,9 @@ export const PlusIcon: React.FC = () => (
         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
     </svg>
 );
+
+export const SparklesIcon: React.FC<{className?: string}> = ({className = "h-5 w-5"}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path d="M10.89 2.11a1 1 0 00-1.78 0l-1.34 2.71-3.01.43a1 1 0 00-.55 1.7l2.18 2.12-.51 2.99a1 1 0 001.45 1.05l2.68-1.41 2.68 1.41a1 1 0 001.45-1.05l-.51-2.99 2.18-2.12a1 1 0 00-.55-1.7l-3.01-.43-1.34-2.71zM4 14a1 1 0 100 2 1 1 0 000-2zm12 0a1 1 0 100 2 1 1 0 000-2z" />
+    </svg>
+);
