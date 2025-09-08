@@ -29,6 +29,7 @@ const awxConfig = {
 const ollamaConfig = {
   url: process.env.OLLAMA_URL || 'http://192.168.1.173:11434',
   model: process.env.OLLAMA_MODEL || 'llama3.1',
+  useAiSearch: process.env.USE_AI_SEARCH === 'true',
 };
 
 // SSL config is handled explicitly by the install.sh script for production.

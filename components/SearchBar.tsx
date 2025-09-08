@@ -16,6 +16,7 @@ interface SearchBarProps {
   onToggleModifiedColumn: () => void;
   onAiSearch: (prompt: string) => void;
   isAiLoading: boolean;
+  isAiEnabled: boolean;
 }
 
 const AiButton: React.FC<{ onClick: () => void, isLoading: boolean }> = ({ onClick, isLoading }) => (
@@ -51,6 +52,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   onToggleModifiedColumn,
   onAiSearch,
   isAiLoading,
+  isAiEnabled,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -161,11 +163,11 @@ const SearchBar: React.FC<SearchBarProps> = ({
       <div
         className={`flex items-center w-full bg-slate-200 dark:bg-zinc-800 rounded-full h-9 focus-within:ring-2 focus-within:ring-violet-500/70 dark:focus-within:ring-violet-400/70 transition-shadow duration-200 pr-2`}
       >
-        <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} />
+        {isAiEnabled && <AiButton onClick={handleToggleAiMode} isLoading={isAiLoading} />}
 
         {!isAiMode && (
           <>
-            <svg className="h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ml-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <svg className={`h-5 w-5 text-slate-500 dark:text-zinc-400 flex-shrink-0 ${isAiEnabled ? 'ml-3' : 'ml-4'}`} xmlns="http://www.w.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
 
@@ -229,7 +231,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
             value={searchInputValue}
             onChange={(e) => setSearchInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            className={`flex-grow bg-transparent text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none min-w-[100px] py-1 ${isAiMode ? 'pl-3' : 'pl-2'}`}
+            className={`flex-grow bg-transparent text-sm placeholder-slate-500 dark:placeholder-zinc-400 text-slate-900 dark:text-zinc-100 focus:outline-none min-w-[100px] py-1 ${isAiMode ? 'pl-3' : (isAiEnabled ? 'pl-2' : 'pl-3')}`}
         />
 
         <div className="flex items-center gap-1.5 pl-1 flex-shrink-0">

@@ -21,6 +21,7 @@ type Theme = 'light' | 'dark';
 interface ServiceStatus {
   awx: { configured: boolean };
   db: { configured: boolean };
+  ai: { enabled: boolean };
 }
 
 interface FactBrowserProps {}
@@ -213,7 +214,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [scrollProgress, setScrollProgress] = useState(0);
 
   // State for backend service availability
-  const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ awx: { configured: false }, db: { configured: false }});
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ awx: { configured: false }, db: { configured: false }, ai: { enabled: false } });
   const [isStatusLoading, setIsStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
 
@@ -242,7 +243,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         console.error("Failed to fetch service status:", e.message);
         setStatusError(e.message);
         // Assume services are unavailable on error
-        setServiceStatus({ awx: { configured: false }, db: { configured: false }});
+        setServiceStatus({ awx: { configured: false }, db: { configured: false }, ai: { enabled: false } });
         setDataSource('demo');
       } finally {
         setIsStatusLoading(false);
@@ -741,6 +742,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     onToggleModifiedColumn={() => setShowModifiedColumn(!showModifiedColumn)}
                     onAiSearch={handleAiSearch}
                     isAiLoading={isAiLoading}
+                    isAiEnabled={serviceStatus.ai.enabled}
                   />
                   <p className={`text-xs text-slate-500 dark:text-zinc-400 pt-2`}>
                     Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.

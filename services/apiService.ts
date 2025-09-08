@@ -9,6 +9,7 @@ const API_BASE_URL = '/api';
 interface ServiceStatus {
   awx: { configured: boolean };
   db: { configured: boolean };
+  ai: { enabled: boolean };
 }
 
 export const apiService = {

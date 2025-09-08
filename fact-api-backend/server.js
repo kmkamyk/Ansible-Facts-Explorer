@@ -215,6 +215,9 @@ app.get('/api/status', async (req, res) => {
         },
         db: {
             configured: dbStatus.configured,
+        },
+        ai: {
+            enabled: ollamaConfig.useAiSearch && !!ollamaConfig.url,
         }
     };
     console.log('Service status:', status);
@@ -278,26 +281,41 @@ app.get('/api/facts', async (req, res) => {
 
 // --- New AI Search Endpoint ---
 app.post('/api/ai-search', async (req, res) => {
-    const { prompt, allFactPaths } = req.body;
-
+    if (!ollamaConfig.useAiSearch) {
+        return res.status(403).json({ error: 'AI search feature is disabled by the administrator.' });
+    }
     if (!ollamaConfig.url) {
         return res.status(500).json({ error: 'Ollama service is not configured on the backend.' });
     }
-    if (!prompt || !allFactPaths) {
-        return res.status(400).json({ error: 'Missing prompt or allFactPaths in request body.' });
+
+    const { prompt, allFactPaths } = req.body;
+    if (!prompt || !allFactPaths || !Array.isArray(allFactPaths)) {
+        return res.status(400).json({ error: 'Missing or invalid "prompt" or "allFactPaths" in request body.' });
     }
 
-    const systemPrompt = `You are an AI assistant for Ansible Facts Explorer. Your task is to convert a user's natural language query into structured search filters.
-The available fact paths are: ${JSON.stringify(allFactPaths)}.
-The user's query is: "${prompt}".
+    const systemPrompt = `You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.
 
-Based on the query, generate a list of search filters. Each filter should follow one of these formats:
-1. A simple string for a general search (e.g., "webserver").
-2. A key-value pair with an operator (e.g., "ansible_distribution=Ubuntu", "ansible_processor_vcpus>4", "role!=database"). Use quotes for values with spaces (e.g., 'ansible_distribution="Rocky Linux"').
-3. An exact match search by wrapping the value in double quotes (e.g., '"22.04"').
+The available fact paths for searching are:
+${allFactPaths.join(', ')}
 
-Only use fact paths from the provided list as keys in your filters. Prioritize creating precise key-value filters over general string searches.
-Respond ONLY with a valid JSON array of strings representing the filters. For example: ["environment=production", "role=webserver", "ansible_distribution=\"Rocky Linux\""]`;
+The supported filter syntax is:
+- "some text": for a simple regex/substring search across all fields.
+- ""exact text"": for an exact match on a field's value.
+- "key=value": for an exact match on a fact path ending with 'key' and having the value 'value'.
+- "key>value", "key<value", "key>=value", "key<=value": for numerical comparisons.
+- "key!=value": for non-equality checks.
+- "term1|term2": for an OR condition within a single filter pill.
+
+Rules:
+1.  You MUST respond with ONLY a valid JSON array of strings. Do not add any explanation, preamble, or markdown formatting.
+2.  Analyze the user's query and break it down into the most specific and accurate filter pills possible.
+3.  Use the 'key=value' syntax whenever possible, referencing the provided list of fact paths.
+4.  If a user mentions a specific version number or a value that needs to be exact, use the key="value" syntax.
+5.  If the user's intent is unclear, generate the most likely set of filters.
+
+User Query: "${prompt}"
+
+Your JSON Response:`;
 
     try {
         console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
@@ -320,30 +338,46 @@ Respond ONLY with a valid JSON array of strings representing the filters. For ex
         }
 
         const ollamaData = await ollamaResponse.json();
-        const responseText = ollamaData.response;
+        const aiContent = ollamaData.response;
 
-        console.log('[AI Search] Raw response from Ollama:', responseText);
-
-        // The model is instructed to return ONLY a JSON array, but let's be safe.
-        // Find the start and end of the JSON array in the response string.
-        const jsonStart = responseText.indexOf('[');
-        const jsonEnd = responseText.lastIndexOf(']');
-
-        if (jsonStart === -1 || jsonEnd === -1) {
-            console.error('[AI Search] Could not find a JSON array in the Ollama response.');
-            throw new Error('AI model did not return a valid filter format.');
+        if (!aiContent) {
+            throw new Error('AI returned an empty response.');
         }
+      
+        console.log('[AI Search] Raw response from model:', aiContent);
 
-        const jsonString = responseText.substring(jsonStart, jsonEnd + 1);
-        
-        const filters = JSON.parse(jsonString);
-        
-        if (!Array.isArray(filters) || !filters.every(item => typeof item === 'string')) {
-            throw new Error('AI model returned data that is not an array of strings.');
+        // Clean the response: remove markdown backticks and trim whitespace
+        const cleanedContent = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
+  
+        try {
+            const filters = JSON.parse(cleanedContent);
+            if (!Array.isArray(filters) || !filters.every(item => typeof item === 'string')) {
+                console.error('[AI Search] Parsed content is not a valid array of strings:', filters);
+                throw new Error('AI did not return a valid JSON array of strings.');
+            }
+            console.log('[AI Search] Successfully generated filters:', filters);
+            res.json(filters);
+        } catch (parseError) {
+            console.error('[AI Search] Failed to parse JSON from model response:', parseError.message);
+            console.error('[AI Search] Cleaned content was:', cleanedContent);
+            // Try to extract JSON from a potentially garbled response
+            const jsonMatch = cleanedContent.match(/\[.*\]/s);
+            if (jsonMatch && jsonMatch[0]) {
+                try {
+                    const fallbackFilters = JSON.parse(jsonMatch[0]);
+                    if (!Array.isArray(fallbackFilters) || !fallbackFilters.every(item => typeof item === 'string')) {
+                         console.error('[AI Search] Fallback parsed content is not a valid array of strings:', fallbackFilters);
+                         throw new Error('AI did not return a valid JSON array of strings, even with fallback.');
+                    }
+                    console.log('[AI Search] Successfully extracted filters with fallback regex:', fallbackFilters);
+                    res.json(fallbackFilters);
+                    return;
+                } catch (fallbackError) {
+                    console.error('[AI Search] Fallback JSON parsing also failed.');
+                }
+            }
+            throw new Error('AI returned content that could not be parsed as JSON.');
         }
-
-        console.log('[AI Search] Parsed filters:', filters);
-        res.json(filters);
 
     } catch (error) {
         console.error('[AI Search] Error processing AI search:', error.message);

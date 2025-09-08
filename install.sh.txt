@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v3.6 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v3.7 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
 # - A dedicated PostgreSQL database using the default system version.
@@ -21,6 +21,7 @@ AWX_URL=""
 AWX_TOKEN=""
 OLLAMA_URL=""
 OLLAMA_MODEL=""
+USE_AI_SEARCH_FLAG="false"
 # --- End of user configuration ---
 
 FRONTEND_DIR="/app/afe"
@@ -98,16 +99,26 @@ function interactive_setup() {
         exit 1
     fi
 
-    # Prompt for Ollama URL
-    read -p "Enter your Ollama API URL [http://192.168.1.173:11434]: " OLLAMA_URL
-    OLLAMA_URL=${OLLAMA_URL:-"http://192.168.1.173:11434"} # Set default if empty
+    # Prompt to enable AI
+    local ENABLE_AI
+    read -p "Enable AI search feature (requires configured Ollama)? [y/N]: " ENABLE_AI
+    if [[ "$ENABLE_AI" =~ ^[Yy]$ ]]; then
+        USE_AI_SEARCH_FLAG="true"
+        log_info "AI search feature has been enabled. Now collecting Ollama details."
+        # Prompt for Ollama URL
+        read -p "Enter your Ollama API URL [http://127.0.0.1:11434]: " OLLAMA_URL
+        OLLAMA_URL=${OLLAMA_URL:-"http://127.0.0.1:11434"} # Set default if empty
 
-    # Prompt for Ollama Model
-    read -p "Enter the Ollama model to use [llama3.1]: " OLLAMA_MODEL
-    OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.1"} # Set default if empty
+        # Prompt for Ollama Model
+        read -p "Enter the Ollama model to use [llama3.1]: " OLLAMA_MODEL
+        OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.1"} # Set default if empty
+    else
+        log_info "AI search feature is disabled."
+    fi
 
     log_info "Configuration details collected."
 }
+
 
 # --- Installation Functions ---
 function generate_ssl_certs() {
@@ -195,6 +206,7 @@ module.exports = {
   ollamaConfig: {
     url: '$OLLAMA_URL',
     model: '$OLLAMA_MODEL',
+    useAiSearch: $USE_AI_SEARCH_FLAG,
   },
   sslConfig: {
     keyPath: '',
@@ -516,8 +528,11 @@ case "$1" in
     log_info "Database Password:    (the one you provided during setup)"
     log_warn "!!! IMPORTANT: Remember the password. It is needed for manual database access. !!!"
     log_info "AWX URL configured:   $AWX_URL"
-    log_info "Ollama URL:           $OLLAMA_URL"
-    log_info "Ollama Model:         $OLLAMA_MODEL"
+    log_info "AI Search Enabled:    $USE_AI_SEARCH_FLAG"
+    if [[ "$USE_AI_SEARCH_FLAG" == "true" ]]; then
+      log_info "Ollama URL:           $OLLAMA_URL"
+      log_info "Ollama Model:         $OLLAMA_MODEL"
+    fi
     log_info "Backend config file:  $BACKEND_DIR/config.js"
     log_info "You can now access the application at the URL above."
     echo -e "\033[1;32m======================================================================\033[0m"
