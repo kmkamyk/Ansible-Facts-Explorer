@@ -2,6 +2,8 @@
 
 # Ansible Facts Explorer
 
+> **Note:** This project was developed entirely within [Google AI Studio's "Build with AI"](https://aistudio.google.com/build) feature, showcasing the power of generative AI in modern application development.
+
 Ansible Facts Explorer is a powerful and intuitive web application designed to fetch, browse, and dynamically search Ansible facts from various data sources, including a live Ansible AWX instance, a cached PostgreSQL database, or local demo data. It provides a highly performant, user-friendly interface for engineers and administrators to quickly find and analyze configuration details across their managed hosts.
 
 ## ✨ Key Features
@@ -238,6 +240,8 @@ The backend is the data hub. It must be configured and running before the fronte
 
 3.  **Configure Environment Variables**:
     Create a file named `.env` in the `fact-api-backend/` directory. **Do not commit this file to version control.** Copy the template below and fill in your values.
+
+    > **Important**: The backend server does not automatically load this `.env` file. You must export these variables into your shell's environment before starting the server. A common way to do this is by running `export $(grep -v '^#' .env | xargs)` from within the `fact-api-backend` directory.
 
     ```dotenv
     # --- For the "Live AWX" source ---

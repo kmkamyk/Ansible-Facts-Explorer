@@ -628,31 +628,27 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   return (
     <div className={`h-full flex flex-col ${isFullScreen ? 'p-4 sm:p-6 lg:p-8 relative' : 'px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 gap-2'}`}>
        {isFullScreen && (
-          <div className="absolute top-4 left-4 sm:left-6 lg:left-8 z-50 pointer-events-none">
-             <h1 className="text-lg font-open-sans flex items-center tracking-tight text-slate-400 dark:text-zinc-600">
-                  <span className="font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400 opacity-70">
-                      AFE
-                  </span>
-                  <span className="mx-2 font-light">|</span>
-                  <span className="font-semibold">
-                      Ansible Facts Explorer
-                  </span>
-              </h1>
+          <div className="absolute top-4 left-4 sm:left-6 lg:left-8 z-50 pointer-events-none opacity-90 flex items-baseline">
+              <span className="text-4xl font-bold tracking-tighter font-open-sans bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
+                  ❍ Afe
+              </span>
+              <span className="mx-3 text-4xl font-light text-slate-300 dark:text-zinc-700 select-none">|</span>
+              <span className="text-4xl font-semibold tracking-tight font-open-sans text-slate-800 dark:text-zinc-100">
+                  Ansible Facts Explorer
+              </span>
           </div>
       )}
 
       {!isFullScreen && (
-        <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-baseline ${densityTheme.headerGap}`}>
-            <div>
-               <h1 className="text-3xl font-open-sans flex items-center tracking-tight">
-                    <span className="font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
-                        AFE
-                    </span>
-                    <span className="mx-3 font-light text-slate-300 dark:text-zinc-700">|</span>
-                    <span className="font-semibold text-slate-800 dark:text-zinc-100">
-                        Ansible Facts Explorer
-                    </span>
-                </h1>
+        <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center ${densityTheme.headerGap}`}>
+            <div className="flex items-baseline">
+                <span className="text-4xl font-bold tracking-tighter font-open-sans bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
+                    ❍ Afe
+                </span>
+                <span className="mx-3 text-4xl font-light text-slate-300 dark:text-zinc-700 select-none">|</span>
+                <span className="text-4xl font-semibold tracking-tight font-open-sans text-slate-800 dark:text-zinc-100">
+                    Ansible Facts Explorer
+                </span>
             </div>
             <div className="flex flex-col items-center sm:items-end">
                 <div className={`flex items-start flex-wrap justify-end ${densityTheme.headerGap}`}>
