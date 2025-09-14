@@ -290,36 +290,18 @@ app.post('/api/ai-search', async (req, res) => {
     if (!ollamaConfig.url) {
         return res.status(500).json({ error: 'Ollama service is not configured on the backend.' });
     }
+    if (!ollamaConfig.promptTemplate) {
+        return res.status(500).json({ error: 'AI prompt template is not configured on the backend.' });
+    }
 
     const { prompt, allFactPaths } = req.body;
     if (!prompt || !allFactPaths || !Array.isArray(allFactPaths)) {
         return res.status(400).json({ error: 'Missing or invalid "prompt" or "allFactPaths" in request body.' });
     }
 
-    const systemPrompt = `You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.
-
-The available fact paths for searching are:
-${allFactPaths.join(', ')}
-
-The supported filter syntax is:
-- "some text": for a simple regex/substring search across all fields.
-- ""exact text"": for an exact match on a field's value.
-- "key=value": for an exact match on a fact path ending with 'key' and having the value 'value'.
-- "key>value", "key<value", "key>=value", "key<=value": for numerical comparisons.
-- "key!=value": for non-equality checks.
-- "term1|term2": for an OR condition within a single filter pill.
-
-Rules:
-- You MUST respond with ONLY a valid JSON array of strings. Do not add any explanation, preamble, or markdown formatting.
-- By default, first try to generate filters using only fact names or their values, without applying "key=value", ""exact text"", or regex syntax.
-- If the user's query clearly refers to a specific value, condition, or comparison, then use the more specific filter mechanisms ("key=value", ""exact text"", comparisons, etc.).
-- Analyze the user's query and break it down into the most specific and accurate filter pills possible.
-- Use the 'key=value' syntax whenever possible when the user explicitly specifies a value and it matches one of the available fact paths.
-- If the user's intent is unclear, generate the most likely set of filters.
-
-User Query: "${prompt}"
-
-Your JSON Response:`;
+    const systemPrompt = ollamaConfig.promptTemplate
+        .replace('${allFactPaths}', allFactPaths.join(', '))
+        .replace('${prompt}', prompt);
 
     try {
         console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);

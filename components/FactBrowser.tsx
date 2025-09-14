@@ -630,7 +630,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
        {isFullScreen && (
           <div className="absolute top-4 left-4 sm:left-6 lg:left-8 z-50 pointer-events-none opacity-90 flex items-baseline">
               <span className="text-4xl font-bold tracking-tighter font-open-sans bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
-                  ❍ Afe
+                  Afe
               </span>
               <span className="mx-3 text-4xl font-light text-slate-300 dark:text-zinc-700 select-none">|</span>
               <span className="text-4xl font-semibold tracking-tight font-open-sans text-slate-800 dark:text-zinc-100">
@@ -643,7 +643,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center ${densityTheme.headerGap}`}>
             <div className="flex items-baseline">
                 <span className="text-4xl font-bold tracking-tighter font-open-sans bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
-                    ❍ Afe
+                    Afe
                 </span>
                 <span className="mx-3 text-4xl font-light text-slate-300 dark:text-zinc-700 select-none">|</span>
                 <span className="text-4xl font-semibold tracking-tight font-open-sans text-slate-800 dark:text-zinc-100">
@@ -878,9 +878,12 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
       {!isFullScreen && (
         <footer className="w-full text-xs text-slate-500 dark:text-zinc-500 py-1 flex items-center justify-end">
             <div className="flex items-center gap-x-4">
-                <span className="font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
-                    KMK
-                </span>
+                <div className="flex items-baseline">
+                    <span className="font-bold bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
+                        KMK
+                    </span>
+                    <span className="ml-1 text-[10px]">lab</span>
+                </div>
                 <span className="border-l border-slate-300 dark:border-zinc-700 h-4"></span>
                 <div className="flex items-center gap-x-3">
                   <a href="https://osadmins.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">
