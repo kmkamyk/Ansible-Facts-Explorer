@@ -1,4 +1,4 @@
-![Ansible Facts Explorer Screenshot](docs/app-screenshot.png)
+![Ansible Facts Explorer Screenshot](docs/afe4.webp)
 
 # Ansible Facts Explorer
 
