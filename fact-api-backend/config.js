@@ -31,7 +31,7 @@ const ollamaConfig = {
   model: process.env.OLLAMA_MODEL || 'llama3.1',
   useAiSearch: process.env.USE_AI_SEARCH === 'true',
   apiFormat: process.env.OLLAMA_API_FORMAT || 'ollama', // Can be 'ollama' or 'openai'
-  promptTemplate: `You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.
+  systemPromptTemplate: `You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.
 
 The available fact paths for searching are:
 \${allFactPaths}
@@ -50,11 +50,8 @@ Rules:
 - If the user's query clearly refers to a specific value, condition, or comparison, then use the more specific filter mechanisms ("key=value", ""exact text"", comparisons, etc.).
 - Analyze the user's query and break it down into the most specific and accurate filter pills possible.
 - Use the 'key=value' syntax whenever possible when the user explicitly specifies a value and it matches one of the available fact paths.
-- If the user's intent is unclear, generate the most likely set of filters.
-
-User Query: "\${prompt}"
-
-Your JSON Response:`,
+- If the user's intent is unclear, generate the most likely set of filters.`,
+  userPromptTemplate: `User Query: "\${prompt}"\n\nYour JSON Response:`,
 };
 
 // SSL config is handled explicitly by the install.sh script for production.

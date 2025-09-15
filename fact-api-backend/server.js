@@ -287,7 +287,7 @@ app.post('/api/ai-search', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
         return res.status(403).json({ error: 'AI search feature is disabled by the administrator.' });
     }
-    if (!ollamaConfig.url || !ollamaConfig.promptTemplate) {
+    if (!ollamaConfig.url || !ollamaConfig.systemPromptTemplate) {
         return res.status(500).json({ error: 'AI service or prompt is not configured on the backend.' });
     }
 
@@ -296,8 +296,10 @@ app.post('/api/ai-search', async (req, res) => {
         return res.status(400).json({ error: 'Missing or invalid "prompt" or "allFactPaths" in request body.' });
     }
 
-    const systemPrompt = ollamaConfig.promptTemplate
-        .replace('${allFactPaths}', allFactPaths.join(', '))
+    const systemPrompt = ollamaConfig.systemPromptTemplate
+        .replace('${allFactPaths}', allFactPaths.join(', '));
+    
+    const userPrompt = (ollamaConfig.userPromptTemplate || 'User Query: "${prompt}"\n\nYour JSON Response:')
         .replace('${prompt}', prompt);
 
     try {
@@ -311,7 +313,10 @@ app.post('/api/ai-search', async (req, res) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: ollamaConfig.model,
-                    messages: [{ role: 'user', content: systemPrompt }],
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
                     stream: false,
                 }),
             });
@@ -327,13 +332,15 @@ app.post('/api/ai-search', async (req, res) => {
 
         } else {
             // --- Ollama Native API ---
+            // Ollama native API uses a single prompt string, so we combine them.
+            const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
             console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
             const response = await fetch(`${ollamaConfig.url}/api/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: ollamaConfig.model,
-                    prompt: systemPrompt,
+                    prompt: combinedPrompt,
                     stream: false,
                     format: 'json', // Use Ollama's native JSON mode for reliability
                 }),

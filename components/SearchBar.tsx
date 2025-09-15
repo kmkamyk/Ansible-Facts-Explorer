@@ -108,9 +108,20 @@ const SearchBar: React.FC<SearchBarProps> = ({
   useEffect(() => {
     if (searchInputValue && !isAiMode) {
         const lowercasedInput = searchInputValue.toLowerCase();
-        const filtered = allFactPaths.filter(path =>
-            path.toLowerCase().includes(lowercasedInput)
-        );
+        
+        const startsWith: string[] = [];
+        const includes: string[] = [];
+
+        for (const path of allFactPaths) {
+            const lowercasedPath = path.toLowerCase();
+            if (lowercasedPath.startsWith(lowercasedInput)) {
+                startsWith.push(path);
+            } else if (lowercasedPath.includes(lowercasedInput)) {
+                includes.push(path);
+            }
+        }
+        
+        const filtered = [...startsWith.sort(), ...includes.sort()];
         setSuggestions(filtered);
         setShowSuggestions(true);
         setActiveSuggestionIndex(-1); // Reset active index on new input
