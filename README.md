@@ -1,6 +1,6 @@
-# Ansible Facts Explorer
+![Ansible Facts Explorer Screenshot](docs/app-screenshot.png)
 
-![Ansible Facts Explorer Screenshot](docs/afe4.webp)
+# Ansible Facts Explorer
 
 > **Note:** This project was developed entirely within [Google AI Studio's "Build with AI"](https://aistudio.google.com/build) feature, showcasing the power of generative AI in modern application development.
 
