@@ -4,7 +4,7 @@ import Spinner from './Spinner';
 
 interface SearchBarProps {
   searchPills: string[];
-  setSearchPills: (pills: string[]) => void;
+  setSearchPills: (pills: string[] | ((prevState: string[]) => string[])) => void;
   searchInputValue: string;
   setSearchInputValue: (value: string) => void;
   onFilterClick: () => void;
@@ -90,7 +90,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   
   const handleRemovePill = (pillToRemove: string) => {
-    setSearchPills(searchPills.filter(pill => pill !== pillToRemove));
+    setSearchPills(pills => pills.filter(pill => pill !== pillToRemove));
   };
   
   const handleToggleAiMode = () => {
@@ -132,9 +132,10 @@ const SearchBar: React.FC<SearchBarProps> = ({
   }, []);
 
   const handleSuggestionClick = (suggestion: string) => {
-    // FIX: Changed from functional update `setSearchPills(prev => ...)` to direct update `setSearchPills([...])`
-    // to match the prop type `(pills: string[]) => void`.
-    setSearchPills([...new Set([...searchPills, suggestion.trim()])]);
+    const newPill = suggestion.trim();
+    if (newPill) {
+      setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
+    }
     setSearchInputValue('');
     setShowSuggestions(false);
     inputRef.current?.focus();
@@ -170,11 +171,11 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 // After a successful AI search, remain in AI mode for subsequent queries.
             });
         } else {
-            setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);
+            setSearchPills(prev => [...new Set([...prev, searchInputValue.trim()])]);
             setSearchInputValue('');
         }
     } else if (!isAiMode && event.key === 'Backspace' && searchInputValue === '' && searchPills.length > 0) {
-      setSearchPills(searchPills.slice(0, -1));
+      setSearchPills(pills => pills.slice(0, -1));
       event.preventDefault();
     } else if (isAiMode && event.key === 'Escape') {
       setIsAiMode(false);
