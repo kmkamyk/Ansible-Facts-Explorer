@@ -50,7 +50,11 @@ Rules:
 - If the user's query clearly refers to a specific value, condition, or comparison, then use the more specific filter mechanisms ("key=value", ""exact text"", comparisons, etc.).
 - Analyze the user's query and break it down into the most specific and accurate filter pills possible.
 - Use the 'key=value' syntax whenever possible when the user explicitly specifies a value and it matches one of the available fact paths.
-- If the user's intent is unclear, generate the most likely set of filters.`,
+- If the user's intent is unclear, generate the most likely set of filters.
+
+Here is an example:
+input: "ubuntu hosts with 4 cpus"
+output: ["distribution=Ubuntu", "vcpus=4"]`,
   userPromptTemplate: `User Query: "\${prompt}"\n\nYour JSON Response:`,
 };
 

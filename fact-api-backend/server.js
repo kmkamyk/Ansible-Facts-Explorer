@@ -359,18 +359,28 @@ app.post('/api/ai-search', async (req, res) => {
       
         console.log('[AI Search] Raw content from model:', aiContent);
 
-        // Common JSON parsing logic for both API formats
+        // Common JSON parsing and validation logic
         try {
-            const pills = JSON.parse(aiContent);
-            if (!Array.isArray(pills)) {
-                console.error('[AI Search] Parsed content is not an array:', pills);
+            const parsedContent = JSON.parse(aiContent);
+
+            if (Array.isArray(parsedContent)) {
+                // This is the expected format.
+                console.log('[AI Search] Successfully generated pills:', parsedContent);
+                res.json(parsedContent);
+            } else if (typeof parsedContent === 'object' && parsedContent !== null) {
+                // Handle the case where the AI returns an object { "key": "value" }
+                console.warn('[AI Search] Parsed content is an object, not an array. Converting to filter pills.');
+                const convertedPills = Object.entries(parsedContent).map(([key, value]) => `${key}=${value}`);
+                console.log('[AI Search] Successfully converted object to pills:', convertedPills);
+                res.json(convertedPills);
+            } else {
+                // The content is valid JSON but not an array or a convertible object.
+                console.error('[AI Search] Parsed content is not an array or a convertible object:', parsedContent);
                 throw new Error('AI did not return a valid JSON array.');
             }
-            console.log('[AI Search] Successfully generated pills:', pills);
-            res.json(pills);
         } catch (parseError) {
             console.error('[AI Search] Failed to parse JSON from model response:', parseError.message);
-            // Fallback logic to extract JSON from a potentially garbled response
+            // Fallback logic to extract a JSON array from a potentially garbled response
             const jsonMatch = aiContent.match(/\[.*\]/s);
             if (jsonMatch && jsonMatch[0]) {
                 try {
