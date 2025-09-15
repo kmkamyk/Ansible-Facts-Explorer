@@ -271,6 +271,9 @@ The backend is the data hub. It must be configured and running before the fronte
     OLLAMA_URL=http://localhost:11434
     # The name of the model Ollama should use (e.g., llama3.1, mistral)
     OLLAMA_MODEL=llama3.1
+    # The API format for your LLM service. Use 'ollama' for Ollama's native API,
+    # or 'openai' for OpenAI-compatible endpoints (like llama.cpp with --api).
+    OLLAMA_API_FORMAT=ollama
 
     # --- To enable HTTPS on the backend server (for advanced development) ---
     # SSL_CERT_PATH=
@@ -380,6 +383,7 @@ Using a web server like Nginx is the most robust method. It correctly serves the
 -   **"AI search failed"**:
     -   Ensure your Ollama instance is running and accessible from the backend server at the URL specified in the backend configuration (`OLLAMA_URL`).
     -   Verify that the model name (`OLLAMA_MODEL`) is correct and has been pulled (`ollama pull llama3.1`).
+    -   If using an OpenAI-compatible API, ensure `OLLAMA_API_FORMAT` is set to `openai`.
 
 -   **Data from a source fails to load (e.g., "AWX is not configured")**:
     -   Double-check that the environment variables in `fact-api-backend/.env` (for manual setup) or the config at `/data/afe-api/config.js` (for script setup) are correct.

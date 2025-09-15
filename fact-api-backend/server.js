@@ -282,16 +282,13 @@ app.get('/api/facts', async (req, res) => {
   }
 });
 
-// --- New AI Search Endpoint (updated based on user feedback for better results) ---
+// --- AI Search Endpoint ---
 app.post('/api/ai-search', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
         return res.status(403).json({ error: 'AI search feature is disabled by the administrator.' });
     }
-    if (!ollamaConfig.url) {
-        return res.status(500).json({ error: 'Ollama service is not configured on the backend.' });
-    }
-    if (!ollamaConfig.promptTemplate) {
-        return res.status(500).json({ error: 'AI prompt template is not configured on the backend.' });
+    if (!ollamaConfig.url || !ollamaConfig.promptTemplate) {
+        return res.status(500).json({ error: 'AI service or prompt is not configured on the backend.' });
     }
 
     const { prompt, allFactPaths } = req.body;
@@ -304,39 +301,61 @@ app.post('/api/ai-search', async (req, res) => {
         .replace('${prompt}', prompt);
 
     try {
-        console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
-        const ollamaResponse = await fetch(`${ollamaConfig.url}/api/generate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: ollamaConfig.model,
-                prompt: systemPrompt,
-                stream: false, // Ensure we get a single JSON response
-            }),
-        });
+        let aiContent;
 
-        if (!ollamaResponse.ok) {
-            const errorText = await ollamaResponse.text();
-            console.error(`[AI Search] Ollama API responded with error ${ollamaResponse.status}: ${errorText}`);
-            throw new Error(`Ollama API error: ${ollamaResponse.statusText}`);
-        }
+        if (ollamaConfig.apiFormat === 'openai') {
+            // --- OpenAI-compatible API (e.g., llama.cpp) ---
+            console.log(`[AI Search] Sending prompt to OpenAI-compatible model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
+            const response = await fetch(`${ollamaConfig.url}/v1/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: ollamaConfig.model,
+                    messages: [{ role: 'user', content: systemPrompt }],
+                    stream: false,
+                    response_format: { "type": "json_object" }
+                }),
+            });
 
-        const ollamaData = await ollamaResponse.json();
-        const aiContent = ollamaData.response;
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[AI Search] OpenAI-compatible API responded with error ${response.status}: ${errorText}`);
+                throw new Error(`AI API error: ${response.statusText}`);
+            }
+            const data = await response.json();
+            aiContent = data.choices[0]?.message?.content;
+            if (!aiContent) throw new Error('AI returned an empty response from the choices array.');
 
-        if (!aiContent) {
-            throw new Error('AI returned an empty response.');
+        } else {
+            // --- Ollama Native API ---
+            console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
+            const response = await fetch(`${ollamaConfig.url}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: ollamaConfig.model,
+                    prompt: systemPrompt,
+                    stream: false,
+                    format: 'json', // Use Ollama's native JSON mode for reliability
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[AI Search] Ollama API responded with error ${response.status}: ${errorText}`);
+                throw new Error(`Ollama API error: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            aiContent = data.response;
+            if (!aiContent) throw new Error('AI returned an empty response.');
         }
       
-        console.log('[AI Search] Raw response from model:', aiContent);
+        console.log('[AI Search] Raw content from model:', aiContent);
 
-        // Clean the response: remove markdown backticks and trim whitespace
-        const cleanedContent = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
-
+        // Common JSON parsing logic for both API formats
         try {
-            const pills = JSON.parse(cleanedContent);
+            const pills = JSON.parse(aiContent);
             if (!Array.isArray(pills)) {
                 console.error('[AI Search] Parsed content is not an array:', pills);
                 throw new Error('AI did not return a valid JSON array.');
@@ -345,9 +364,8 @@ app.post('/api/ai-search', async (req, res) => {
             res.json(pills);
         } catch (parseError) {
             console.error('[AI Search] Failed to parse JSON from model response:', parseError.message);
-            console.error('[AI Search] Cleaned content was:', cleanedContent);
-            // Try to extract JSON from a potentially garbled response
-            const jsonMatch = cleanedContent.match(/\[.*\]/s);
+            // Fallback logic to extract JSON from a potentially garbled response
+            const jsonMatch = aiContent.match(/\[.*\]/s);
             if (jsonMatch && jsonMatch[0]) {
                 try {
                     const fallbackPills = JSON.parse(jsonMatch[0]);
@@ -362,7 +380,7 @@ app.post('/api/ai-search', async (req, res) => {
         }
 
     } catch (err) {
-        console.error(`[AI Search] Error during Ollama request:`, err);
+        console.error(`[AI Search] Error during AI request:`, err);
         res.status(500).json({ error: err.message || 'Failed to generate search pills from AI.' });
     }
 });

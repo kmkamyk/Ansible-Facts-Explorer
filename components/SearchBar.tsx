@@ -12,12 +12,29 @@ interface SearchBarProps {
   isFilterDisabled: boolean;
   visibleFactCount: number;
   totalFactCount: number;
+  allFactPaths: string[];
   showModifiedColumn: boolean;
   onToggleModifiedColumn: () => void;
   onAiSearch: (prompt: string, onSuccess: () => void) => void;
   isAiLoading: boolean;
   isAiEnabled: boolean;
 }
+
+const HighlightMatch: React.FC<{ text: string; highlight: string }> = ({ text, highlight }) => {
+    if (!highlight) return <>{text}</>;
+    const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
+    return (
+        <span>
+            {parts.map((part, i) =>
+                part.toLowerCase() === highlight.toLowerCase() ? (
+                    <strong key={i} className="font-bold">{part}</strong>
+                ) : (
+                    part
+                )
+            )}
+        </span>
+    );
+};
 
 const SearchModeButton: React.FC<{ onClick: () => void, isLoading: boolean, isAiMode: boolean }> = ({ onClick, isLoading, isAiMode }) => (
     <button
@@ -54,6 +71,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   isFilterDisabled,
   visibleFactCount,
   totalFactCount,
+  allFactPaths,
   showModifiedColumn,
   onToggleModifiedColumn,
   onAiSearch,
@@ -62,9 +80,14 @@ const SearchBar: React.FC<SearchBarProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [isAiMode, setIsAiMode] = useState(false);
+  
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   
   const handleRemovePill = (pillToRemove: string) => {
     setSearchPills(searchPills.filter(pill => pill !== pillToRemove));
@@ -76,18 +99,72 @@ const SearchBar: React.FC<SearchBarProps> = ({
   };
 
   useEffect(() => {
-      if (isAiMode) {
-          inputRef.current?.focus();
-      }
+    if (isAiMode) {
+      setShowSuggestions(false);
+      inputRef.current?.focus();
+    }
   }, [isAiMode]);
+  
+  useEffect(() => {
+    if (searchInputValue && !isAiMode) {
+        const lowercasedInput = searchInputValue.toLowerCase();
+        const filtered = allFactPaths.filter(path =>
+            path.toLowerCase().includes(lowercasedInput)
+        );
+        setSuggestions(filtered);
+        setShowSuggestions(true);
+        setActiveSuggestionIndex(-1); // Reset active index on new input
+    } else {
+        setShowSuggestions(false);
+    }
+  }, [searchInputValue, allFactPaths, isAiMode]);
+  
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
+            setShowSuggestions(false);
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleSuggestionClick = (suggestion: string) => {
+      setSearchInputValue(suggestion + '=');
+      setShowSuggestions(false);
+      inputRef.current?.focus();
+  };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showSuggestions && suggestions.length > 0) {
+      if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          setActiveSuggestionIndex(prev => (prev + 1) % suggestions.length);
+          return;
+      }
+      if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          setActiveSuggestionIndex(prev => (prev - 1 + suggestions.length) % suggestions.length);
+          return;
+      }
+      if (event.key === 'Enter' && activeSuggestionIndex > -1) {
+          event.preventDefault();
+          handleSuggestionClick(suggestions[activeSuggestionIndex]);
+          return;
+      }
+       if (event.key === 'Escape') {
+          setShowSuggestions(false);
+          return;
+      }
+    }
+    
     if (event.key === 'Enter' && searchInputValue.trim() !== '') {
         event.preventDefault();
         if (isAiMode) {
             onAiSearch(searchInputValue.trim(), () => {
                 // After a successful AI search, remain in AI mode for subsequent queries.
-                // The input field is cleared within the handleAiSearch function.
             });
         } else {
             setSearchPills([...new Set([...searchPills, searchInputValue.trim()])]);
@@ -97,7 +174,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
       setSearchPills(searchPills.slice(0, -1));
       event.preventDefault();
     } else if (isAiMode && event.key === 'Escape') {
-      setIsAiMode(false); // Allow Esc to exit AI mode
+      setIsAiMode(false);
       setSearchInputValue('');
     }
   };
@@ -168,7 +245,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full relative" ref={searchWrapperRef}>
       <div
         className={`flex items-center w-full rounded-full h-9 focus-within:ring-2 focus-within:ring-violet-500/70 dark:focus-within:ring-violet-400/70 transition-all duration-200 pr-2 ${
             isAiMode 
@@ -301,6 +378,27 @@ const SearchBar: React.FC<SearchBarProps> = ({
           </div>
         </div>
       </div>
+
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute top-full mt-1.5 w-full z-40 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          <ul role="listbox">
+            {suggestions.map((suggestion, index) => (
+              <li key={suggestion} role="option" aria-selected={index === activeSuggestionIndex}>
+                <button
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className={`w-full text-left px-3 py-2 text-sm font-mono truncate transition-colors ${
+                    index === activeSuggestionIndex 
+                      ? 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300' 
+                      : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <HighlightMatch text={suggestion} highlight={searchInputValue} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };

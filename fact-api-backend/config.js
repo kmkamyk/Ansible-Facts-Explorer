@@ -30,6 +30,7 @@ const ollamaConfig = {
   url: process.env.OLLAMA_URL || 'http://192.168.1.173:11434',
   model: process.env.OLLAMA_MODEL || 'llama3.1',
   useAiSearch: process.env.USE_AI_SEARCH === 'true',
+  apiFormat: process.env.OLLAMA_API_FORMAT || 'ollama', // Can be 'ollama' or 'openai'
   promptTemplate: `You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.
 
 The available fact paths for searching are:

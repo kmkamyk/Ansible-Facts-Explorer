@@ -735,6 +735,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     isFilterDisabled={allFactPaths.length === 0}
                     visibleFactCount={visibleFactPaths.size}
                     totalFactCount={allFactPaths.length}
+                    allFactPaths={allFactPaths}
                     showModifiedColumn={showModifiedColumn}
                     onToggleModifiedColumn={() => setShowModifiedColumn(!showModifiedColumn)}
                     onAiSearch={handleAiSearch}
