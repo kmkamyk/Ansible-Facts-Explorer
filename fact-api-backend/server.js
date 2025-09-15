@@ -313,7 +313,6 @@ app.post('/api/ai-search', async (req, res) => {
                     model: ollamaConfig.model,
                     messages: [{ role: 'user', content: systemPrompt }],
                     stream: false,
-                    response_format: { "type": "json_object" }
                 }),
             });
 

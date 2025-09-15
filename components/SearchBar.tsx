@@ -132,9 +132,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
   }, []);
 
   const handleSuggestionClick = (suggestion: string) => {
-      setSearchInputValue(suggestion + '=');
-      setShowSuggestions(false);
-      inputRef.current?.focus();
+    // FIX: Changed from functional update `setSearchPills(prev => ...)` to direct update `setSearchPills([...])`
+    // to match the prop type `(pills: string[]) => void`.
+    setSearchPills([...new Set([...searchPills, suggestion.trim()])]);
+    setSearchInputValue('');
+    setShowSuggestions(false);
+    inputRef.current?.focus();
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
