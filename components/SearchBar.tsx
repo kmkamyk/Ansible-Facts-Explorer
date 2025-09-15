@@ -143,8 +143,10 @@ const SearchBar: React.FC<SearchBarProps> = ({
   }, []);
 
   const handleSuggestionClick = (suggestion: string) => {
-    const newPill = suggestion.trim();
-    if (newPill) {
+    const trimmedSuggestion = suggestion.trim();
+    if (trimmedSuggestion) {
+      // Wrap the suggestion in double quotes to create a pill for an exact match search.
+      const newPill = `"${trimmedSuggestion}"`;
       setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
     }
     setSearchInputValue('');
