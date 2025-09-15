@@ -368,9 +368,17 @@ app.post('/api/ai-search', async (req, res) => {
                 console.log('[AI Search] Successfully generated pills:', parsedContent);
                 res.json(parsedContent);
             } else if (typeof parsedContent === 'object' && parsedContent !== null) {
-                // Handle the case where the AI returns an object { "key": "value" }
+                // Handle cases where the AI returns an object like {"key": "value"} or {"key_with_operator": ""}.
                 console.warn('[AI Search] Parsed content is an object, not an array. Converting to filter pills.');
-                const convertedPills = Object.entries(parsedContent).map(([key, value]) => `${key}=${value}`);
+                const convertedPills = Object.entries(parsedContent).map(([key, value]) => {
+                    // If the value is empty, null, or true, the key is the full filter.
+                    // This handles cases like {"ansible_processor_vcpus": ""} or {"ansible_kernel_version>4": ""}.
+                    if (value === null || value === '' || value === true) {
+                        return key;
+                    }
+                    // Otherwise, it's a standard key=value pair.
+                    return `${key}=${value}`;
+                });
                 console.log('[AI Search] Successfully converted object to pills:', convertedPills);
                 res.json(convertedPills);
             } else {

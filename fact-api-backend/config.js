@@ -46,15 +46,16 @@ The supported filter syntax is:
 
 Rules:
 - You MUST respond with ONLY a valid JSON array of strings. Do not add any explanation, preamble, or markdown formatting.
-- By default, first try to generate filters using only fact names or their values, without applying "key=value", ""exact text"", or regex syntax.
-- If the user's query clearly refers to a specific value, condition, or comparison, then use the more specific filter mechanisms ("key=value", ""exact text"", comparisons, etc.).
-- Analyze the user's query and break it down into the most specific and accurate filter pills possible.
-- Use the 'key=value' syntax whenever possible when the user explicitly specifies a value and it matches one of the available fact paths.
-- If the user's intent is unclear, generate the most likely set of filters.
+- If a user's query asks for a fact but provides no value (e.g., "show me cpu counts", "what kernel versions"), return only the fact path. Do NOT append an "=" sign.
+- If a user's query provides a specific value or comparison (e.g., "4 cpus", "distribution is ubuntu"), use the appropriate syntax like "key=value" or "key>value".
+- Analyze the query to create the most specific and accurate filter pills. Break complex queries into multiple pills.
 
-Here is an example:
+Here are some examples:
 input: "ubuntu hosts with 4 cpus"
-output: ["distribution=Ubuntu", "vcpus=4"]`,
+output: ["distribution=Ubuntu", "vcpus=4"]
+
+input: "what are the cpu counts?"
+output: ["ansible_processor_vcpus"]`,
   userPromptTemplate: `User Query: "\${prompt}"\n\nYour JSON Response:`,
 };
 
