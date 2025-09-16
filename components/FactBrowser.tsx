@@ -193,7 +193,8 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
   const [searchPills, setSearchPills] = useState<string[]>([]);
-  const [searchInputValue, setSearchInputValue] = useState('');
+  const [searchInputValue, setSearchInputValue] = useState(''); // For live input in search bar
+  const [debouncedSearchInput, setDebouncedSearchInput] = useState(''); // For triggering filtering
   const [isLoading, setIsLoading] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,6 +253,17 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     checkServiceStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only once on mount
+
+  // Debounce search input to improve performance
+  useEffect(() => {
+    const handler = setTimeout(() => {
+        setDebouncedSearchInput(searchInputValue);
+    }, 300); // 300ms delay
+
+    return () => {
+        clearTimeout(handler);
+    };
+  }, [searchInputValue]);
 
   useEffect(() => {
     if (viewMode === 'list') {
@@ -350,107 +362,26 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     }
   }, []);
 
-  // Memoize facts grouped by host to optimize host-level filtering.
-  const factsByHost = useMemo(() => {
-      const grouped = new Map<string, FactRow[]>();
-      allFacts.forEach(fact => {
-          if (!grouped.has(fact.host)) {
-              grouped.set(fact.host, []);
-          }
-          grouped.get(fact.host)!.push(fact);
-      });
-      return grouped;
-  }, [allFacts]);
-
-  // ** Refactored Combined AND/OR Filtering Logic **
+  // ** Strict Row-Level AND Filtering Logic **
   const { searchedTableFacts, searchedDashboardFacts } = useMemo(() => {
-    const trimmedInput = searchInputValue.trim();
-    const hasPills = searchPills.length > 0;
-    const hasInput = !!trimmedInput;
+    const trimmedInput = debouncedSearchInput.trim();
+    const allFilters = trimmedInput ? [...new Set([...searchPills, trimmedInput])] : searchPills;
 
-    if (!hasPills && !hasInput) {
+    if (allFilters.length === 0) {
+        // If no filters, return all facts for both views.
         return { searchedTableFacts: allFacts, searchedDashboardFacts: allFacts };
     }
     
-    // Step 1: Determine the set of hosts that match the pill criteria (AND logic).
-    const hostsMatchingPills = new Set<string>();
-    if (hasPills) {
-        factsByHost.forEach((hostFacts, host) => {
-            // A host must have facts that satisfy EVERY pill.
-            const allPillsMatch = searchPills.every(pill => 
-                hostFacts.some(fact => matchesPill(fact, pill))
-            );
-            if (allPillsMatch) {
-                hostsMatchingPills.add(host);
-            }
-        });
-    }
-
-    // Step 2: Determine the final set of hosts to display based on OR logic with live input.
-    let finalHostnames: Set<string>;
-    if (hasInput) {
-        // Find hosts matching the live input.
-        const hostsMatchingInput = new Set<string>();
-        factsByHost.forEach((hostFacts, host) => {
-            if (hostFacts.some(fact => matchesPill(fact, trimmedInput))) {
-                hostsMatchingInput.add(host);
-            }
-        });
-
-        // If pills also exist, combine the sets: (Hosts matching all pills) OR (Hosts matching input).
-        if (hasPills) {
-            finalHostnames = new Set([...hostsMatchingPills, ...hostsMatchingInput]);
-        } else {
-            // If only input exists, that's our final set.
-            finalHostnames = hostsMatchingInput;
-        }
-    } else {
-        // If there's no input, the final set is just the hosts that matched the pills.
-        finalHostnames = hostsMatchingPills;
-    }
-
-    // Step 3: Get all facts for the final set of hosts (for dashboard context).
-    const contextFacts = allFacts.filter(fact => finalHostnames.has(fact.host));
-
-    // Step 4: **NEW LOGIC** - Filter context facts to determine what's visible in the table.
-    // First, classify pills into host-specific pills and general fact/value pills.
-    const allHostnames = new Set(Array.from(factsByHost.keys(), h => h.toLowerCase()));
-    const otherPills: string[] = [];
-
-    if (hasPills) {
-        searchPills.forEach(pill => {
-            const trimmedPill = pill.trim();
-            // A pill is considered a "host pill" if it's an exact match for a known hostname.
-            if (trimmedPill.startsWith('"') && trimmedPill.endsWith('"')) {
-                const exactTerm = trimmedPill.substring(1, trimmedPill.length - 1).toLowerCase();
-                if (allHostnames.has(exactTerm)) {
-                    // This is a host pill, so we don't add it to the list of fact filters.
-                    // Its job was already done during host selection.
-                    return;
-                }
-            }
-            // All other pills are treated as fact/value filters.
-            otherPills.push(pill);
-        });
-    }
-    
-    // Combine the "other" pills with the live search input for the final row-level filtering.
-    const activeRowFilters = hasInput ? [...otherPills, trimmedInput] : otherPills;
-
-    const tableFacts = contextFacts.filter(fact => {
-        // If there are any row-level filters active (from pills or live search),
-        // the fact must match at least one of them to be shown.
-        if (activeRowFilters.length > 0) {
-            return activeRowFilters.some(filter => matchesPill(fact, filter));
-        }
-        
-        // If ONLY host pills are active (and no live search), all facts for the
-        // selected hosts (which are already in contextFacts) should be shown.
-        return true;
+    // Single-pass, row-level AND filtering.
+    // A fact row is only included if it matches EVERY filter condition.
+    const filteredRows = allFacts.filter(fact => {
+        return allFilters.every(filter => matchesPill(fact, filter));
     });
 
-    return { searchedTableFacts: tableFacts, searchedDashboardFacts: contextFacts };
-  }, [allFacts, factsByHost, searchPills, searchInputValue]);
+    // For now, both the table and dashboard will use the same strictly filtered data.
+    // This provides the most intuitive and consistent experience.
+    return { searchedTableFacts: filteredRows, searchedDashboardFacts: filteredRows };
+  }, [allFacts, searchPills, debouncedSearchInput]);
 
 
   const filteredFacts = useMemo(() => {
