@@ -327,6 +327,9 @@ Using a web server like Nginx is the most robust method. It correctly serves the
         root /path/to/your/ansible-facts-explorer/dist;
         index index.html;
 
+        # Increase max body size to allow large fact lists for AI search
+        client_max_body_size 16m;
+
         location / {
             try_files $uri $uri/ /index.html;
         }
@@ -379,6 +382,9 @@ Using a web server like Nginx is the most robust method. It correctly serves the
 -   **"Could not connect to the backend API" error**:
     -   Ensure the backend server (`fact-api-backend`) is running. Check its terminal for errors.
     -   If using Nginx, ensure it is running and the proxy configuration is correct.
+-   **"API request failed with status 413"**:
+    -   This means your search request (likely containing a large list of fact paths for the AI) is too large for the Nginx default limit.
+    -   Add `client_max_body_size 16m;` to the `server` block in your Nginx site configuration and restart Nginx.
 
 -   **"AI search failed"**:
     -   Ensure your Ollama instance is running and accessible from the backend server at the URL specified in the backend configuration (`OLLAMA_URL`).

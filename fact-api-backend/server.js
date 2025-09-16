@@ -15,7 +15,8 @@ const pool = new Pool(dbConfig);
 
 // Allow requests from your frontend application
 app.use(cors());
-app.use(express.json()); // Middleware to parse JSON bodies
+// Increase the body size limit to handle large fact path lists for AI search
+app.use(express.json({ limit: '16mb' }));
 
 
 // --- Helper function to count facts in a way that matches frontend's row count ---
