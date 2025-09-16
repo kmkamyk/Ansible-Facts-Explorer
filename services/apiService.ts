@@ -12,6 +12,33 @@ interface ServiceStatus {
   ai: { enabled: boolean };
 }
 
+/**
+ * A robust error handler for fetch responses. It tries to parse the body as JSON,
+ * but falls back to plain text if parsing fails. This prevents the client from
+ * crashing on unexpected server error formats (e.g., HTML error pages, plain text).
+ * @param response The fetch Response object.
+ * @returns A promise that rejects with a comprehensive Error object.
+ */
+const handleApiError = async (response: Response): Promise<void> => {
+    let errorMessage;
+    try {
+        // Try to parse the error as JSON, which is the expected format for API errors.
+        const errorData = await response.json();
+        errorMessage = errorData.error || `API Error: ${response.statusText}`;
+    } catch (e) {
+        // If JSON parsing fails, the body is not JSON. Read it as text.
+        try {
+            const textError = await response.text();
+            errorMessage = textError || `API request failed with status: ${response.status} ${response.statusText}`;
+        } catch (textErr) {
+            // Fallback if reading text also fails.
+            errorMessage = `API request failed with status: ${response.status} ${response.statusText} and the error body could not be read.`;
+        }
+    }
+    throw new Error(errorMessage);
+};
+
+
 export const apiService = {
   fetchFacts: async (source: 'awx' | 'db'): Promise<AllHostFacts> => {
     const apiUrl = `${API_BASE_URL}/facts?source=${source}`;
@@ -22,8 +49,7 @@ export const apiService = {
       const response = await fetch(apiUrl);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch data from API: ${response.statusText}`);
+        return handleApiError(response).then(() => { throw new Error("This should not be reached"); });
       }
       
       const data: AllHostFacts = await response.json();
@@ -34,7 +60,7 @@ export const apiService = {
       if (error instanceof TypeError) { // Usually a network error
         throw new Error('Could not connect to the backend API. Is the server running?');
       }
-      throw error; // Re-throw other errors (like the custom one from the response)
+      throw error; // Re-throw other errors (like the custom one from handleApiError)
     }
   },
 
@@ -44,7 +70,7 @@ export const apiService = {
     try {
       const response = await fetch(statusUrl);
       if (!response.ok) {
-        throw new Error(`Failed to fetch status from API: ${response.statusText}`);
+        return handleApiError(response).then(() => { throw new Error("This should not be reached"); });
       }
       return await response.json();
     } catch (error) {
@@ -69,8 +95,7 @@ export const apiService = {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `AI search failed: ${response.statusText}`);
+            return handleApiError(response).then(() => { throw new Error("This should not be reached"); });
         }
         
         return await response.json();
