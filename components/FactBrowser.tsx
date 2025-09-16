@@ -363,29 +363,23 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   }, []);
 
   // ** Strict Row-Level AND Filtering Logic **
-  const { searchedTableFacts, searchedDashboardFacts } = useMemo(() => {
+  const searchedTableFacts = useMemo(() => {
     const trimmedInput = debouncedSearchInput.trim();
     const allFilters = trimmedInput ? [...new Set([...searchPills, trimmedInput])] : searchPills;
 
     if (allFilters.length === 0) {
-        // If no filters, return all facts for both views.
-        return { searchedTableFacts: allFacts, searchedDashboardFacts: allFacts };
+      return allFacts;
     }
     
     // Single-pass, row-level AND filtering.
     // A fact row is only included if it matches EVERY filter condition.
-    const filteredRows = allFacts.filter(fact => {
+    return allFacts.filter(fact => {
         return allFilters.every(filter => matchesPill(fact, filter));
     });
-
-    // For now, both the table and dashboard will use the same strictly filtered data.
-    // This provides the most intuitive and consistent experience.
-    return { searchedTableFacts: filteredRows, searchedDashboardFacts: filteredRows };
   }, [allFacts, searchPills, debouncedSearchInput]);
 
 
   const filteredFacts = useMemo(() => {
-    // This now operates on the direct search results for the table.
     if (allFactPaths.length > 0 && visibleFactPaths.size === allFactPaths.length) {
       return searchedTableFacts;
     }
@@ -393,11 +387,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
       visibleFactPaths.has(fact.factPath) || fact.factPath === '---'
     );
   }, [searchedTableFacts, visibleFactPaths, allFactPaths]);
-
-  const dashboardFacts = useMemo(() => {
-    // This now uses the dedicated dashboard data with full context.
-    return searchedDashboardFacts;
-  }, [searchedDashboardFacts]);
   
   const handleRequestSort = (key: SortableKey) => {
     let direction: SortDirection = 'ascending';
@@ -752,7 +741,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
             <div className="px-4 sm:px-6">
                 <Dashboard
-                  facts={dashboardFacts}
+                  facts={searchedTableFacts}
                   isVisible={isDashboardVisible}
                   allFactPaths={allFactPaths}
                   chartFactSelections={chartFactSelections}
