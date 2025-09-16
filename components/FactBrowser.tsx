@@ -96,107 +96,18 @@ const pivotFactsForExport = (facts: FactRow[]): { data: Record<string, any>[]; h
     return { data: dataForExport, headers: ['hostname', ...sortedFactPaths] };
 };
 
-const matchSingleTerm = (fact: FactRow, term: string): boolean => {
-    const trimmedTerm = term.trim();
-    // An empty term within an OR query should not match anything.
-    if (!trimmedTerm) return false;
-
-    const operatorRegex = /^(.*?)\s*(!=|>=|<=|>|<|=)\s*(.*)$/;
-    const match = trimmedTerm.match(operatorRegex);
-
-    if (match) {
-        let [, key, operator, value] = match.map(s => s ? s.trim() : '');
-        if (key && value) {
-            // Handle quoted values for all key-value searches. This allows values with spaces.
-            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-                value = value.substring(1, value.length - 1);
-            }
-
-            const lowerKey = key.toLowerCase();
-            const lowerValue = value.toLowerCase();
-
-            // Handle special key 'host' or 'hostname' for direct filtering
-            if (lowerKey === 'host' || lowerKey === 'hostname') {
-                const hostValue = fact.host.toLowerCase();
-                switch (operator) {
-                    case '=': return hostValue === lowerValue;
-                    case '!=': return hostValue !== lowerValue;
-                    default: return false; // Numerical operators are not applicable to hostnames
-                }
-            }
-            
-            // For other key-value searches, match against the factPath
-            if (!fact.factPath.toLowerCase().endsWith(lowerKey)) {
-                return false;
-            }
-
-            const factValue = fact.value;
-            switch (operator) {
-                case '=': return String(factValue).toLowerCase() === lowerValue;
-                case '!=': return String(factValue).toLowerCase() !== lowerValue;
-                case '>': case '<': case '>=': case '<=':
-                    const numericFactValue = parseFloat(String(factValue));
-                    const numericSearchValue = parseFloat(value);
-                    if (isNaN(numericFactValue) || isNaN(numericSearchValue)) return false;
-                    if (operator === '>') return numericFactValue > numericSearchValue;
-                    if (operator === '<') return numericFactValue < numericSearchValue;
-                    if (operator === '>=') return numericFactValue >= numericSearchValue;
-                    if (operator === '<=') return numericFactValue <= numericSearchValue;
-                    return false;
-                default: return false;
-            }
-        }
-    }
-
-    if (trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"')) {
-        const exactTerm = trimmedTerm.substring(1, trimmedTerm.length - 1).toLowerCase();
-        return (
-            fact.host.toLowerCase() === exactTerm ||
-            fact.factPath.toLowerCase() === exactTerm ||
-            String(fact.value).toLowerCase() === exactTerm
-        );
-    }
-    
-    // Default to regex/includes search across all fields for the pill
-    try {
-        const regex = new RegExp(trimmedTerm, 'i');
-        return (
-            regex.test(fact.host) ||
-            regex.test(fact.factPath) ||
-            regex.test(String(fact.value)) ||
-            (fact.modified ? regex.test(String(fact.modified)) : false)
-        );
-    } catch (e) {
-        const lowercasedFilter = trimmedTerm.toLowerCase();
-        return (
-            fact.host.toLowerCase().includes(lowercasedFilter) ||
-            fact.factPath.toLowerCase().includes(lowercasedFilter) ||
-            String(fact.value).toLowerCase().includes(lowercasedFilter) ||
-            (fact.modified ? String(fact.modified).toLowerCase().includes(lowercasedFilter) : false)
-        );
-    }
-};
-
-
-const matchesPill = (fact: FactRow, pill: string): boolean => {
-    const trimmedPill = pill.trim();
-    if (!trimmedPill) return true;
-
-    // Split by '|' to handle OR conditions. This will also handle single terms correctly.
-    const orTerms = trimmedPill.split('|');
-    
-    // If any of the OR terms match, the whole pill is a match.
-    return orTerms.some(term => matchSingleTerm(fact, term));
-};
-
+// ** NOTE: The core filtering logic (matchSingleTerm, matchesPill) has been moved to `public/filter.worker.js` **
+// ** to run in a background thread and keep the UI responsive. **
 
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
+  const [workerFilteredFacts, setWorkerFilteredFacts] = useState<FactRow[]>([]);
   const [searchPills, setSearchPills] = useState<string[]>([]);
-  const [searchInputValue, setSearchInputValue] = useState(''); // For live input in search bar
-  const [debouncedSearchInput, setDebouncedSearchInput] = useState(''); // For triggering filtering
+  const [searchInputValue, setSearchInputValue] = useState('');
+  const [debouncedSearchInput, setDebouncedSearchInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModifiedColumn, setShowModifiedColumn] = useState(false);
   
@@ -213,20 +124,52 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const filterWorkerRef = useRef<Worker | null>(null);
 
-  // State for backend service availability
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({ awx: { configured: false }, db: { configured: false }, ai: { enabled: false } });
   const [isStatusLoading, setIsStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
 
-  // State for fact filtering
   const [isFactFilterVisible, setIsFactFilterVisible] = useState(false);
   const [allFactPaths, setAllFactPaths] = useState<string[]>([]);
   const [visibleFactPaths, setVisibleFactPaths] = useState<Set<string>>(new Set());
 
-  // State for dashboard
   const [isDashboardVisible, setIsDashboardVisible] = useState(false);
   const [chartFactSelections, setChartFactSelections] = useState<string[]>(['ansible_distribution', 'role']);
+
+  // Initialize Web Worker
+  useEffect(() => {
+    // The worker file must be in the `public` directory to be accessible like this.
+    filterWorkerRef.current = new Worker('/filter.worker.js');
+
+    filterWorkerRef.current.onmessage = (event: MessageEvent<FactRow[]>) => {
+      setWorkerFilteredFacts(event.data);
+      setIsFiltering(false);
+    };
+
+    // Cleanup on unmount
+    return () => {
+      filterWorkerRef.current?.terminate();
+    };
+  }, []);
+  
+  // Trigger Web Worker filtering
+  useEffect(() => {
+    if (!filterWorkerRef.current) return;
+
+    const trimmedInput = debouncedSearchInput.trim();
+    const allFilters = trimmedInput ? [...new Set([...searchPills, trimmedInput])] : searchPills;
+
+    if (allFilters.length === 0) {
+      setWorkerFilteredFacts(allFacts);
+      setIsFiltering(false);
+      return;
+    }
+    
+    setIsFiltering(true);
+    filterWorkerRef.current.postMessage({ allFacts, allFilters });
+
+  }, [allFacts, searchPills, debouncedSearchInput]);
 
 
   // Fetch service status on initial load
@@ -236,14 +179,12 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         setStatusError(null);
         const status = await apiService.fetchStatus();
         setServiceStatus(status);
-        // If current source is now unavailable, fallback to demo
         if ((dataSource === 'awx' && !status.awx.configured) || (dataSource === 'db' && !status.db.configured)) {
           setDataSource('demo');
         }
       } catch (e: any) {
         console.error("Failed to fetch service status:", e.message);
         setStatusError(e.message);
-        // Assume services are unavailable on error
         setServiceStatus({ awx: { configured: false }, db: { configured: false }, ai: { enabled: false } });
         setDataSource('demo');
       } finally {
@@ -252,13 +193,13 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     };
     checkServiceStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount
+  }, []);
 
-  // Debounce search input to improve performance
+  // Debounce search input
   useEffect(() => {
     const handler = setTimeout(() => {
         setDebouncedSearchInput(searchInputValue);
-    }, 300); // 300ms delay
+    }, 300);
 
     return () => {
         clearTimeout(handler);
@@ -319,7 +260,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
             data = await demoService.fetchFacts();
         }
         const flattenedData = flattenFactsForTable(data);
-        setAllFacts(flattenedData);
+        setAllFacts(flattenedData); // This will trigger the worker effect
 
         const uniqueFactPaths = Array.from(new Set(flattenedData.map(f => f.factPath).filter(p => p !== '---'))).sort();
         setAllFactPaths(uniqueFactPaths);
@@ -341,9 +282,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setError(null);
     try {
         const filters = await apiService.performAiSearch(prompt, allFactPaths);
-        // Append the new filters from AI to the existing ones, allowing for search refinement.
         setSearchPills(prevPills => [...new Set([...prevPills, ...filters])]);
-        setSearchInputValue(''); // Clear the input after search
+        setSearchInputValue('');
         onSuccess();
     } catch (e: any) {
         setError(e.message || 'AI search failed.');
@@ -357,36 +297,19 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     const stringValue = String(value).trim();
     if (stringValue && stringValue !== '---' && stringValue !== '(No data available)') {
         const newPill = `"${stringValue}"`;
-        // Add new pill, avoiding duplicates
         setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
     }
   }, []);
-
-  // ** Strict Row-Level AND Filtering Logic **
-  const searchedTableFacts = useMemo(() => {
-    const trimmedInput = debouncedSearchInput.trim();
-    const allFilters = trimmedInput ? [...new Set([...searchPills, trimmedInput])] : searchPills;
-
-    if (allFilters.length === 0) {
-      return allFacts;
-    }
-    
-    // Single-pass, row-level AND filtering.
-    // A fact row is only included if it matches EVERY filter condition.
-    return allFacts.filter(fact => {
-        return allFilters.every(filter => matchesPill(fact, filter));
-    });
-  }, [allFacts, searchPills, debouncedSearchInput]);
-
-
+  
   const filteredFacts = useMemo(() => {
+    // Use the facts from the worker, then apply the visibility filter
     if (allFactPaths.length > 0 && visibleFactPaths.size === allFactPaths.length) {
-      return searchedTableFacts;
+      return workerFilteredFacts;
     }
-    return searchedTableFacts.filter(fact => 
+    return workerFilteredFacts.filter(fact => 
       visibleFactPaths.has(fact.factPath) || fact.factPath === '---'
     );
-  }, [searchedTableFacts, visibleFactPaths, allFactPaths]);
+  }, [workerFilteredFacts, visibleFactPaths, allFactPaths]);
   
   const handleRequestSort = (key: SortableKey) => {
     let direction: SortDirection = 'ascending';
@@ -469,7 +392,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         return { data, headers };
     }
     
-    // For pivot view, the data is already in the correct shape { data, headers }
     return sortedPivotedData;
   }, [viewMode, sortedListFacts, sortedPivotedData, showModifiedColumn]);
 
@@ -662,9 +584,10 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
                     isAiLoading={isAiLoading}
                     isAiEnabled={serviceStatus.ai.enabled}
                   />
-                  <p className={`text-xs text-slate-500 dark:text-zinc-400 pt-2`}>
-                    Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.
-                  </p>
+                  <div className={`text-xs text-slate-500 dark:text-zinc-400 pt-2 flex items-center gap-2`}>
+                    <span>Displaying {displayedItemCount.toLocaleString()} {displayedItemName} of {totalItemCount.toLocaleString()} total {totalItemName}.</span>
+                    {isFiltering && <Spinner className="w-3.5 h-3.5" />}
+                  </div>
                 </div>
                 <div className={`flex items-center shrink-0 gap-2`}>
                   <Button
@@ -741,7 +664,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
             <div className="px-4 sm:px-6">
                 <Dashboard
-                  facts={searchedTableFacts}
+                  facts={workerFilteredFacts}
                   isVisible={isDashboardVisible}
                   allFactPaths={allFactPaths}
                   chartFactSelections={chartFactSelections}
