@@ -282,6 +282,54 @@ app.get('/api/facts', async (req, res) => {
   }
 });
 
+
+/**
+ * A robust parser for handling potentially malformed JSON responses from an LLM.
+ * It handles markdown code fences and extracts the first valid JSON object or array.
+ * @param {string} rawContent - The raw string response from the AI model.
+ * @returns {object | null} The parsed JSON object, or null if parsing fails.
+ */
+const parseAiJsonResponse = (rawContent) => {
+    if (!rawContent || typeof rawContent !== 'string') {
+        console.warn('[AI Parse] AI content is empty or not a string.');
+        return null;
+    }
+
+    let content = rawContent.trim();
+    
+    // 1. Handle Markdown Fences (most common issue)
+    const markdownMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (markdownMatch && markdownMatch[1]) {
+        console.log('[AI Parse] Extracted content from Markdown code fence.');
+        content = markdownMatch[1].trim();
+    }
+
+    // 2. Try direct parsing first
+    try {
+        return JSON.parse(content);
+    } catch (e) {
+        console.warn('[AI Parse] Direct JSON.parse failed. Attempting fallback extraction.');
+    }
+
+    // 3. Fallback: find the first occurrence of a JSON object or array
+    const jsonRegex = /({[\s\S]*}|\[[\s\S]*\])/;
+    const match = content.match(jsonRegex);
+    if (match && match[0]) {
+        try {
+            const parsed = JSON.parse(match[0]);
+            console.log('[AI Parse] Successfully extracted and parsed JSON with fallback regex.');
+            return parsed;
+        } catch (e) {
+            console.error('[AI Parse] Fallback JSON parsing also failed after extraction.', e.message);
+            return null;
+        }
+    }
+    
+    console.error('[AI Parse] All parsing attempts failed.');
+    return null;
+};
+
+
 // --- AI Search Endpoint ---
 app.post('/api/ai-search', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
@@ -308,11 +356,10 @@ app.post('/api/ai-search', async (req, res) => {
     if (allFactPaths.length > MAX_FACT_PATHS_FOR_AI) {
         console.log(`[AI Search] Pre-filtering ${allFactPaths.length} fact paths...`);
         
-        // Simple tokenization: split by space, remove common words, take unique terms
         const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'with', 'for', 'of', 'in', 'on', 'at', 'all', 'show', 'me', 'find', 'get', 'list']);
         const keywords = new Set(
             prompt.toLowerCase()
-                  .replace(/[^\w\s]/g, '') // Remove punctuation
+                  .replace(/[^\w\s]/g, '')
                   .split(/\s+/)
                   .filter(word => word && !stopWords.has(word))
         );
@@ -330,13 +377,11 @@ app.post('/api/ai-search', async (req, res) => {
                 }
             }
             
-            // If we found matches, use them. If not, we might have to fall back, but this is unlikely.
             if (matchedPaths.size > 0) {
                 relevantFactPaths = Array.from(matchedPaths);
             }
         }
         
-        // Apply the safety limit if the pre-filtered list is still too large
         if (relevantFactPaths.length > MAX_FACT_PATHS_FOR_AI) {
             relevantFactPaths = relevantFactPaths.slice(0, MAX_FACT_PATHS_FOR_AI);
         }
@@ -355,7 +400,6 @@ app.post('/api/ai-search', async (req, res) => {
         let aiContent;
 
         if (ollamaConfig.apiFormat === 'openai') {
-            // --- OpenAI-compatible API (e.g., llama.cpp) ---
             console.log(`[AI Search] Sending prompt to OpenAI-compatible model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
             const response = await fetch(`${ollamaConfig.url}/v1/chat/completions`, {
                 method: 'POST',
@@ -377,11 +421,8 @@ app.post('/api/ai-search', async (req, res) => {
             }
             const data = await response.json();
             aiContent = data.choices[0]?.message?.content;
-            if (!aiContent) throw new Error('AI returned an empty response from the choices array.');
 
         } else {
-            // --- Ollama Native API ---
-            // Ollama native API uses a single prompt string, so we combine them.
             const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
             console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
             const response = await fetch(`${ollamaConfig.url}/api/generate`, {
@@ -391,7 +432,7 @@ app.post('/api/ai-search', async (req, res) => {
                     model: ollamaConfig.model,
                     prompt: combinedPrompt,
                     stream: false,
-                    format: 'json', // Use Ollama's native JSON mode for reliability
+                    format: 'json',
                 }),
             });
 
@@ -403,53 +444,31 @@ app.post('/api/ai-search', async (req, res) => {
 
             const data = await response.json();
             aiContent = data.response;
-            if (!aiContent) throw new Error('AI returned an empty response.');
         }
       
         console.log('[AI Search] Raw content from model:', aiContent);
+        
+        const parsedContent = parseAiJsonResponse(aiContent);
 
-        // Common JSON parsing and validation logic
-        try {
-            const parsedContent = JSON.parse(aiContent);
+        if (!parsedContent) {
+            console.error(`[AI Search] Could not parse the following response from the AI model: \n---\n${aiContent}\n---`);
+            throw new Error('AI returned a response that could not be understood. Please try rephrasing your query.');
+        }
 
-            if (Array.isArray(parsedContent)) {
-                // This is the expected format.
-                console.log('[AI Search] Successfully generated pills:', parsedContent);
-                res.json(parsedContent);
-            } else if (typeof parsedContent === 'object' && parsedContent !== null) {
-                // Handle cases where the AI returns an object like {"key": "value"} or {"key_with_operator": ""}.
-                console.warn('[AI Search] Parsed content is an object, not an array. Converting to filter pills.');
-                const convertedPills = Object.entries(parsedContent).map(([key, value]) => {
-                    // If the value is empty, null, or true, the key is the full filter.
-                    // This handles cases like {"ansible_processor_vcpus": ""} or {"ansible_kernel_version>4": ""}.
-                    if (value === null || value === '' || value === true) {
-                        return key;
-                    }
-                    // Otherwise, it's a standard key=value pair.
-                    return `${key}=${value}`;
-                });
-                console.log('[AI Search] Successfully converted object to pills:', convertedPills);
-                res.json(convertedPills);
-            } else {
-                // The content is valid JSON but not an array or a convertible object.
-                console.error('[AI Search] Parsed content is not an array or a convertible object:', parsedContent);
-                throw new Error('AI did not return a valid JSON array.');
-            }
-        } catch (parseError) {
-            console.error('[AI Search] Failed to parse JSON from model response:', parseError.message);
-            // Fallback logic to extract a JSON array from a potentially garbled response
-            const jsonMatch = aiContent.match(/\[.*\]/s);
-            if (jsonMatch && jsonMatch[0]) {
-                try {
-                    const fallbackPills = JSON.parse(jsonMatch[0]);
-                    console.log('[AI Search] Successfully extracted pills with fallback regex:', fallbackPills);
-                    res.json(fallbackPills);
-                    return;
-                } catch (fallbackError) {
-                    console.error('[AI Search] Fallback JSON parsing also failed.');
-                }
-            }
-            throw new Error('AI returned content that could not be parsed as JSON.');
+        if (Array.isArray(parsedContent)) {
+            console.log('[AI Search] Successfully generated pills:', parsedContent);
+            res.json(parsedContent);
+        } else if (typeof parsedContent === 'object' && parsedContent !== null) {
+            console.warn('[AI Search] Parsed content is an object, not an array. Converting to filter pills.');
+            const convertedPills = Object.entries(parsedContent).map(([key, value]) => {
+                if (value === null || value === '' || value === true) return key;
+                return `${key}=${value}`;
+            });
+            console.log('[AI Search] Successfully converted object to pills:', convertedPills);
+            res.json(convertedPills);
+        } else {
+            console.error('[AI Search] Parsed content is valid JSON but not an array or a convertible object:', parsedContent);
+            throw new Error('AI did not return a valid JSON array or object.');
         }
 
     } catch (err) {
@@ -466,7 +485,6 @@ if (sslConfig.keyPath && sslConfig.certPath) {
             key: fs.readFileSync(sslConfig.keyPath),
             cert: fs.readFileSync(sslConfig.certPath),
         };
-        // Add CA bundle if provided
         if (sslConfig.caPath) {
             options.ca = fs.readFileSync(sslConfig.caPath);
         }
