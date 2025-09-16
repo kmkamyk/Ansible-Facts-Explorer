@@ -296,8 +296,57 @@ app.post('/api/ai-search', async (req, res) => {
         return res.status(400).json({ error: 'Missing or invalid "prompt" or "allFactPaths" in request body.' });
     }
 
+    // =========================================================================
+    // ** Scalability Enhancement for AI Search **
+    // Instead of sending all fact paths, pre-filter them based on keywords
+    // from the user's prompt. This keeps the context sent to the LLM small
+    // and relevant, preventing token limit errors and improving performance.
+    // =========================================================================
+    let relevantFactPaths = allFactPaths;
+    const MAX_FACT_PATHS_FOR_AI = 200; // Safety limit
+
+    if (allFactPaths.length > MAX_FACT_PATHS_FOR_AI) {
+        console.log(`[AI Search] Pre-filtering ${allFactPaths.length} fact paths...`);
+        
+        // Simple tokenization: split by space, remove common words, take unique terms
+        const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'with', 'for', 'of', 'in', 'on', 'at', 'all', 'show', 'me', 'find', 'get', 'list']);
+        const keywords = new Set(
+            prompt.toLowerCase()
+                  .replace(/[^\w\s]/g, '') // Remove punctuation
+                  .split(/\s+/)
+                  .filter(word => word && !stopWords.has(word))
+        );
+
+        if (keywords.size > 0) {
+            console.log(`[AI Search] Using keywords: ${Array.from(keywords).join(', ')}`);
+            const matchedPaths = new Set();
+            for (const path of allFactPaths) {
+                const lowerPath = path.toLowerCase();
+                for (const keyword of keywords) {
+                    if (lowerPath.includes(keyword)) {
+                        matchedPaths.add(path);
+                        break; 
+                    }
+                }
+            }
+            
+            // If we found matches, use them. If not, we might have to fall back, but this is unlikely.
+            if (matchedPaths.size > 0) {
+                relevantFactPaths = Array.from(matchedPaths);
+            }
+        }
+        
+        // Apply the safety limit if the pre-filtered list is still too large
+        if (relevantFactPaths.length > MAX_FACT_PATHS_FOR_AI) {
+            relevantFactPaths = relevantFactPaths.slice(0, MAX_FACT_PATHS_FOR_AI);
+        }
+
+        console.log(`[AI Search] Sending ${relevantFactPaths.length} relevant fact paths to AI model.`);
+    }
+
+
     const systemPrompt = ollamaConfig.systemPromptTemplate
-        .replace('${allFactPaths}', allFactPaths.join(', '));
+        .replace('${allFactPaths}', relevantFactPaths.join(', '));
     
     const userPrompt = (ollamaConfig.userPromptTemplate || 'User Query: "${prompt}"\n\nYour JSON Response:')
         .replace('${prompt}', prompt);
