@@ -29,7 +29,6 @@ const awxConfig = {
 const ollamaConfig = {
   url: process.env.OLLAMA_URL || 'http://192.168.1.173:11434',
   model: process.env.OLLAMA_MODEL || 'llama3.1',
-  embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
   useAiSearch: process.env.USE_AI_SEARCH === 'true',
   apiFormat: process.env.OLLAMA_API_FORMAT || 'ollama', // Can be 'ollama' or 'openai'
   systemPromptTemplate: `You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.
@@ -58,23 +57,16 @@ output: ["distribution=Ubuntu", "vcpus=4"]
 input: "what are the cpu counts?"
 output: ["ansible_processor_vcpus"]`,
   userPromptTemplate: `User Query: "\${prompt}"\n\nYour JSON Response:`,
-  chatSystemPromptTemplate: `You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer.
-Your task is to answer the user's question based ONLY on the provided "Context" which contains relevant Ansible facts for a set of hosts retrieved from a larger database.
+  chatSystemPromptTemplate: `You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer. Your task is to answer questions based *only* on the provided JSON data containing Ansible facts for a set of hosts.
 
 Follow these rules strictly:
-1.  Base all your answers on the provided "Context". Do not use any external knowledge or make assumptions.
-2.  The context is a snippet of the most relevant data. If the answer is not in the "Context", state that you cannot find the information in the relevant facts you were given. Do not suggest the information might exist elsewhere.
-3.  Be concise and provide direct answers.
+1.  **Base all answers on the provided data.** Do not use any external knowledge or make assumptions.
+2.  **If the answer is not in the data, state it clearly.** For example, say "I cannot find that information in the provided facts."
+3.  **Be concise.** Provide direct answers to the user's questions.
 4.  You can use Markdown for formatting (like lists or bold text) to improve readability.
 
-----------------
-CONTEXT:
-{context}
-----------------
-
-QUESTION: {question}
-
-ANSWER:`,
+Here is the complete set of Ansible facts data you must use for your answers:
+\${factsContext}`,
 };
 
 // SSL config is handled explicitly by the install.sh script for production.

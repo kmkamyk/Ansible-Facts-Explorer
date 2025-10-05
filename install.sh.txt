@@ -21,7 +21,6 @@ AWX_URL=""
 AWX_TOKEN=""
 OLLAMA_URL=""
 OLLAMA_MODEL=""
-OLLAMA_EMBEDDING_MODEL=""
 OLLAMA_API_FORMAT=""
 USE_AI_SEARCH_FLAG="false"
 # --- End of user configuration ---
@@ -112,12 +111,8 @@ function interactive_setup() {
         OLLAMA_URL=${OLLAMA_URL:-"http://127.0.0.1:11434"} # Set default if empty
 
         # Prompt for Ollama Model
-        read -p "Enter the Ollama model to use for generation [llama3.1]: " OLLAMA_MODEL
+        read -p "Enter the Ollama model to use [llama3.1]: " OLLAMA_MODEL
         OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.1"} # Set default if empty
-
-        # Prompt for Ollama Embedding Model
-        read -p "Enter the Ollama model to use for embeddings [nomic-embed-text]: " OLLAMA_EMBEDDING_MODEL
-        OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-"nomic-embed-text"} # Set default if empty
         
         # Prompt for API Format
         read -p "Enter the AI API format (ollama or openai for llama.cpp) [ollama]: " OLLAMA_API_FORMAT
@@ -217,7 +212,6 @@ const awxConfig = {
 const ollamaConfig = {
   url: '$OLLAMA_URL',
   model: '$OLLAMA_MODEL',
-  embeddingModel: '$OLLAMA_EMBEDDING_MODEL',
   useAiSearch: $USE_AI_SEARCH_FLAG,
   apiFormat: '$OLLAMA_API_FORMAT',
   systemPromptTemplate: 'You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.\\n\\n' +
@@ -241,23 +235,14 @@ const ollamaConfig = {
     'input: "what are the cpu counts?"\\n' +
     'output: ["ansible_processor_vcpus"]',
   userPromptTemplate: 'User Query: "\\\${prompt}"\\n\\nYour JSON Response:',
-  chatSystemPromptTemplate: \`You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer.
-Your task is to answer the user's question based ONLY on the provided "Context" which contains relevant Ansible facts for a set of hosts retrieved from a larger database.
-
-Follow these rules strictly:
-1.  Base all your answers on the provided "Context". Do not use any external knowledge or make assumptions.
-2.  The context is a snippet of the most relevant data. If the answer is not in the "Context", state that you cannot find the information in the relevant facts you were given. Do not suggest the information might exist elsewhere.
-3.  Be concise and provide direct answers.
-4.  You can use Markdown for formatting (like lists or bold text) to improve readability.
-
-----------------
-CONTEXT:
-{context}
-----------------
-
-QUESTION: {question}
-
-ANSWER:\`,
+  chatSystemPromptTemplate: 'You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer. Your task is to answer questions based *only* on the provided JSON data containing Ansible facts for a set of hosts.\\n\\n' +
+    'Follow these rules strictly:\\n' +
+    '1.  **Base all answers on the provided data.** Do not use any external knowledge or make assumptions.\\n' +
+    '2.  **If the answer is not in the data, state it clearly.** For example, say "I cannot find that information in the provided facts."\\n' +
+    '3.  **Be concise.** Provide direct answers to the user\\'s questions.\\n' +
+    '4.  You can use Markdown for formatting (like lists or bold text) to improve readability.\\n\\n' +
+    'Here is the complete set of Ansible facts data you must use for your answers:\\n' +
+    '\\\${factsContext}',
 };
 
 const sslConfig = {
@@ -597,8 +582,7 @@ case "$1" in
     log_info "AI Search Enabled:    $USE_AI_SEARCH_FLAG"
     if [[ "$USE_AI_SEARCH_FLAG" == "true" ]]; then
       log_info "Ollama URL:           $OLLAMA_URL"
-      log_info "Ollama Gen Model:     $OLLAMA_MODEL"
-      log_info "Ollama Embed Model:   $OLLAMA_EMBEDDING_MODEL"
+      log_info "Ollama Model:         $OLLAMA_MODEL"
       log_info "AI API Format:        $OLLAMA_API_FORMAT"
     fi
     log_info "Backend config file:  $BACKEND_DIR/config.js"

@@ -7,18 +7,6 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const { dbConfig, awxConfig, sslConfig, ollamaConfig } = require('./config');
 
-// --- LangChain / RAG Imports ---
-const { Document } = require("langchain/document");
-const { ChatOllama } = require("@langchain/community/chat_models/ollama");
-const { OllamaEmbeddings } = require("@langchain/community/embeddings/ollama");
-const { Chroma } = require("@langchain/community/vectorstores/chroma");
-const { PromptTemplate } = require("@langchain/core/prompts");
-const { StringOutputParser } = require("@langchain/core/output_parsers");
-const { RunnableSequence } = require("@langchain/core/runnables");
-const { formatDocumentsAsString } = require("langchain/util/document");
-const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
-
-
 const app = express();
 const port = 4000;
 
@@ -490,7 +478,7 @@ app.post('/api/ai-search', async (req, res) => {
     }
 });
 
-// --- AI Chat Endpoint (RAG Implementation) ---
+// --- AI Chat Endpoint ---
 app.post('/api/ai-chat', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
         return res.status(403).json({ error: 'AI features are disabled by the administrator.' });
@@ -500,77 +488,150 @@ app.post('/api/ai-chat', async (req, res) => {
     }
 
     const { messages, factsContext } = req.body;
-    if (!messages || messages.length === 0 || !factsContext) {
+    if (!messages || !Array.isArray(messages) || !factsContext) {
         return res.status(400).json({ error: 'Missing or invalid "messages" or "factsContext" in request body.' });
     }
 
+    const MAX_CONTEXT_CHARS = 1024 * 1024; // Increased limit to 1MB
+    let factsString = JSON.stringify(factsContext, null, 2);
+    let wasContextFiltered = false;
+
+    // --- Dynamic Context Filtering for Large Datasets ---
+    if (factsString.length > MAX_CONTEXT_CHARS) {
+        console.warn(`[AI Chat] Facts context is too large (${(factsString.length / 1024 / 1024).toFixed(2)} MB). Attempting to filter based on conversation...`);
+        wasContextFiltered = true;
+
+        const userMessages = messages.filter(m => m.role === 'user').slice(-3).map(m => m.content);
+        if (userMessages.length > 0) {
+            const query = userMessages.join(' ');
+            const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'with', 'for', 'of', 'in', 'on', 'at', 'all', 'show', 'me', 'find', 'get', 'list', 'what', 'who', 'about', 'how', 'many', 'tell', 'can', 'you']);
+            const keywords = new Set(
+                query.toLowerCase()
+                     .replace(/[^\w\s.-]/g, '') // Keep dots and dashes for hostnames/paths
+                     .split(/\s+/)
+                     .filter(word => word && !stopWords.has(word))
+            );
+
+            if (keywords.size > 0) {
+                console.log(`[AI Chat] Filtering context with keywords: ${Array.from(keywords).join(', ')}`);
+                const filteredFacts = {};
+                
+                // Filter hosts: include a host if its name or any of its facts match the keywords
+                for (const host in factsContext) {
+                    let hostMatches = false;
+                    const lowerHost = host.toLowerCase();
+
+                    // Check hostname first
+                    for (const keyword of keywords) {
+                        if (lowerHost.includes(keyword)) {
+                            hostMatches = true;
+                            break;
+                        }
+                    }
+                    if (hostMatches) {
+                        filteredFacts[host] = factsContext[host];
+                        continue;
+                    }
+
+                    // If hostname doesn't match, check the stringified facts for that host
+                    const hostDataString = JSON.stringify(factsContext[host]).toLowerCase();
+                    for (const keyword of keywords) {
+                        if (hostDataString.includes(keyword)) {
+                            hostMatches = true;
+                            break;
+                        }
+                    }
+                    if (hostMatches) {
+                        filteredFacts[host] = factsContext[host];
+                    }
+                }
+
+                factsString = JSON.stringify(filteredFacts, null, 2);
+                console.log(`[AI Chat] Context size after filtering: ${(factsString.length / 1024).toFixed(2)} KB.`);
+            }
+        }
+    }
+    
+    // Final check and truncation if filtering was insufficient or not possible
+    if (factsString.length > MAX_CONTEXT_CHARS) {
+        console.warn(`[AI Chat] Context still too large after filtering (or no keywords found). Truncating to ${MAX_CONTEXT_CHARS} characters.`);
+        factsString = factsString.substring(0, MAX_CONTEXT_CHARS);
+        // Ensure the truncated string is valid JSON by finding the last complete object.
+        const lastBrace = factsString.lastIndexOf('},');
+        if (lastBrace > 0) {
+            factsString = factsString.substring(0, lastBrace + 1) + '\n  "__TRUNCATED__": "The data was too large and has been shortened."\n}';
+        }
+        wasContextFiltered = true;
+    }
+
+
+    const systemPromptTemplate = ollamaConfig.chatSystemPromptTemplate;
+    let systemPrompt = systemPromptTemplate.replace('${factsContext}', factsString);
+
+    if (wasContextFiltered) {
+        systemPrompt += "\n\n**IMPORTANT NOTE:** The provided JSON data is a *filtered or truncated subset* of the full dataset, selected because the original dataset was too large for this conversation. Answer based only on this subset, and if you can't find something, it might be because it was filtered out.";
+    }
+
+
+    // Construct the message history for the API call
+    const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.filter(m => m.role !== 'error').map(({ role, content }) => ({ role, content }))
+    ];
+    
     try {
-        console.log('[AI Chat RAG] Starting RAG pipeline...');
+        let aiContent;
+        let endpointUrl, body;
 
-        // 1. Initialize models
-        const model = new ChatOllama({
-            baseUrl: ollamaConfig.url,
-            model: ollamaConfig.model,
+        if (ollamaConfig.apiFormat === 'openai') {
+            console.log(`[AI Chat] Sending prompt to OpenAI-compatible model '${ollamaConfig.model}'`);
+            endpointUrl = `${ollamaConfig.url}/v1/chat/completions`;
+            body = JSON.stringify({
+                model: ollamaConfig.model,
+                messages: apiMessages,
+                stream: false,
+            });
+        } else { // 'ollama' format, using the modern /api/chat endpoint
+            console.log(`[AI Chat] Sending prompt to Ollama model '${ollamaConfig.model}' via chat endpoint`);
+            endpointUrl = `${ollamaConfig.url}/api/chat`;
+            body = JSON.stringify({
+                model: ollamaConfig.model,
+                messages: apiMessages,
+                stream: false,
+            });
+        }
+      
+        const response = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
         });
 
-        const embeddings = new OllamaEmbeddings({
-            model: ollamaConfig.embeddingModel,
-            baseUrl: ollamaConfig.url,
-        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[AI Chat] API responded with error ${response.status}: ${errorText}`);
+            throw new Error(`AI API error: ${response.statusText}`);
+        }
 
-        // 2. Prepare documents from facts context
-        // Each host's facts become a separate document for better retrieval granularity.
-        const documents = Object.entries(factsContext).map(([hostname, facts]) =>
-            new Document({
-                pageContent: `Facts for host: ${hostname}\n${JSON.stringify(facts, null, 2)}`,
-                metadata: { hostname },
-            })
-        );
-        console.log(`[AI Chat RAG] Created ${documents.length} documents from facts context.`);
-
-        // 3. Split documents into smaller chunks
-        const textSplitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 2000,
-            chunkOverlap: 200,
-        });
-        const splits = await textSplitter.splitDocuments(documents);
-        console.log(`[AI Chat RAG] Split documents into ${splits.length} chunks.`);
-
-        // 4. Create an in-memory vector store
-        const vectorStore = await Chroma.fromDocuments(splits, embeddings, {
-            collectionName: `afe-rag-${Date.now()}`, // Unique collection for each in-memory session
-        });
-        const retriever = vectorStore.asRetriever();
-        console.log('[AI Chat RAG] In-memory vector store created.');
+        const data = await response.json();
         
-        // 5. Define the prompt template
-        const promptTemplate = PromptTemplate.fromTemplate(ollamaConfig.chatSystemPromptTemplate);
+        // Response structure varies between OpenAI and Ollama chat
+        if (ollamaConfig.apiFormat === 'openai') {
+            aiContent = data.choices[0]?.message?.content;
+        } else {
+            aiContent = data.message?.content;
+        }
 
-        // 6. Construct the RAG chain
-        const ragChain = RunnableSequence.from([
-            {
-                context: (input) => retriever.pipe(formatDocumentsAsString).invoke(input.question),
-                question: (input) => input.question,
-            },
-            promptTemplate,
-            model,
-            new StringOutputParser(),
-        ]);
-        
-        console.log('[AI Chat RAG] RAG chain constructed.');
+        if (!aiContent) {
+            console.error('[AI Chat] Could not extract AI content from response:', data);
+            throw new Error('AI returned a response in an unexpected format.');
+        }
 
-        // 7. Get the latest user question
-        const latestQuestion = messages[messages.length - 1].content;
-        console.log(`[AI Chat RAG] Invoking chain with question: "${latestQuestion}"`);
-
-        // 8. Invoke the chain and get the response
-        const aiResponse = await ragChain.invoke({ question: latestQuestion });
-
-        console.log('[AI Chat RAG] Raw response from model:', aiResponse);
-        res.json({ response: aiResponse.trim() });
+        console.log('[AI Chat] Raw response from model:', aiContent);
+        res.json({ response: aiContent.trim() });
 
     } catch (err) {
-        console.error(`[AI Chat RAG] Error during RAG pipeline:`, err);
+        console.error(`[AI Chat] Error during AI request:`, err);
         res.status(500).json({ error: err.message || 'Failed to get a response from the AI model.' });
     }
 });

@@ -8,9 +8,7 @@ Ansible Facts Explorer is a powerful and intuitive web application designed to f
 
 ## ✨ Key Features
 
-- **AI-Powered Search & Chat**:
-  - **Natural Language Search**: Ask questions like "show me all ubuntu hosts with more than 4 cpus" and get precise filters generated automatically.
-  - **Scalable AI Chat (RAG)**: Engage in a conversation about your infrastructure, no matter the size. Using a **Retrieval-Augmented Generation (RAG)** architecture, the chat can handle hundreds of thousands of facts without hitting context limits, providing fast and accurate answers based on the most relevant data.
+- **AI-Powered Search**: Seamlessly switch to an AI-driven search mode. Ask natural language questions (e.g., "show me all ubuntu hosts with more than 4 cpus") and get precise filters generated automatically. Powered by a local [Ollama](https://ollama.com/) instance.
 - **Multiple Data Sources**: Seamlessly switch between fetching data from a live AWX API, a pre-populated PostgreSQL database, or built-in demo data.
 - **Interactive Dashboard**: Get a high-level overview of your infrastructure with a dynamic dashboard featuring:
   - Key metric cards (total hosts, facts, vCPUs, memory).
@@ -64,35 +62,29 @@ The application decouples the frontend from the data-fetching logic. The backend
         v                         v                              v
 ```
 
-#### AI-Powered Chat Flow (RAG Architecture)
-
-To handle massive datasets without hitting AI model context limits, the chat feature uses a Retrieval-Augmented Generation (RAG) architecture.
+#### AI-Powered Search Flow
 
 ```
 +------------------+      +---------------------+      +----------------+
-| Browser          |      | Backend Server (RAG)|      | Ollama API     |
-| (React Frontend) |      | (Node.js/Express)   |      | (LLM + Embed)  |
+| Browser          |      | Backend Server      |      | Ollama API     |
+| (React Frontend) |      | (Node.js/Express)   |      | (e.g., Llama3) |
 +------------------+      +---------------------+      +----------------+
         |                         |                              |
-        | 1. Chat Request         |                              |
-        | (Question + Full Facts) |                              |
-        | ----------------------> | 2. Create in-memory          |
-        |                         |    Vector Store from Facts   |
-        |                         | <--------------------------->| 3. Generate Embeddings
+        | 1. AI Search Request    |                              |
+        | (Natural Language)      |                              |
+        | ----------------------> |                              |
+        |                         | 2. Construct System Prompt   |
+        |                         |    (with context & fact list)|
+        |                         | -----------------------------> |
         |                         |                              |
-        |                         | 4. Search Vector Store       |
-        |                         |    with Question -> Context  |
+        |                         | 3. Get Filter Suggestions    |
+        |                         | <---------------------------- |
         |                         |                              |
-        |                         | 5. Construct RAG Prompt      |
-        |                         |    (Context + Question)      |
-        |                         | ---------------------------> | 6. Generate Answer
-        |                         |                              |
-        |                         | <--------------------------- | 7. LLM Response
-        |                         |                              |
-        | 8. Return Answer        |                              |
+        | 4. Return JSON filters  |                              |
         | <---------------------- |                              |
         |                         |                              |
-        | 9. Display in Chat      |                              |
+        | 5. Apply Filters        |                              |
+        |    & Update UI          |                              |
         v                         v                              v
 ```
 
@@ -140,10 +132,7 @@ The PostgreSQL database acts as a high-performance cache. It's designed to be po
 - **Backend (for DB & AWX sources)**:
   - **Framework**: Node.js with Express
   - **Database Driver**: `pg` (node-postgres)
-  - **AI Integration**:
-    - [Ollama](https://ollama.com/) for local LLM inference.
-    - [LangChain.js](https://js.langchain.com/) for orchestrating the RAG pipeline.
-    - [ChromaDB](https://www.trychroma.com/) (in-memory) for vector storage.
+  - **AI Integration**: [Ollama](https://ollama.com/) for local LLM inference.
   - **Middleware**: `cors` for handling cross-origin requests.
 
 ## 🚀 One-Command Installation (Recommended for Linux)
@@ -230,7 +219,7 @@ The frontend runs in the user's browser, and the backend runs on a server. They 
 
 -   **Node.js & npm**: Required to run the backend and build the frontend.
 -   **Data Source**: Access to an Ansible AWX instance or a PostgreSQL server.
--   **Ollama (Optional)**: If you want to use the AI search and chat features, you need a running Ollama instance accessible from the backend server.
+-   **Ollama (Optional)**: If you want to use the AI search feature, you need a running Ollama instance accessible from the backend server.
 -   **Web Server (Recommended)**: A web server like **Nginx** is recommended for production to serve the frontend and proxy API requests.
 
 ---
@@ -275,15 +264,13 @@ The backend is the data hub. It must be configured and running before the fronte
     # Database name
     DB_NAME=awx_facts
 
-    # --- AI Search & Chat Feature (Ollama) ---
-    # Set to 'true' to enable the AI features in the UI
+    # --- AI Search Feature (Ollama) ---
+    # Set to 'true' to enable the AI search feature in the UI
     USE_AI_SEARCH=false
     # The full URL to your Ollama API endpoint
     OLLAMA_URL=http://localhost:11434
-    # The name of the model Ollama should use for generation (e.g., llama3.1, mistral)
+    # The name of the model Ollama should use (e.g., llama3.1, mistral)
     OLLAMA_MODEL=llama3.1
-    # The name of the model Ollama should use for embeddings (e.g., nomic-embed-text)
-    OLLAMA_EMBEDDING_MODEL=nomic-embed-text
     # The API format for your LLM service. Use 'ollama' for Ollama's native API,
     # or 'openai' for OpenAI-compatible endpoints (like llama.cpp with --api).
     OLLAMA_API_FORMAT=ollama
@@ -375,9 +362,12 @@ Using a web server like Nginx is the most robust method. It correctly serves the
     -   Use the toggles in the header to select "Live AWX", "Cached DB", or "Demo".
     -   Click the **"Load Facts"** button.
 
-2.  **Using AI Search & Chat**:
-    -   **Search**: Click the **"AI"** button on the search bar. Type a natural language query (e.g., "find all webservers in production") and press **Enter**. The AI will generate the appropriate filter pills.
-    -   **Chat**: Click the floating chat bubble icon. Ask detailed questions about the hosts you have loaded. The AI will find the most relevant facts from your entire dataset to form its answer.
+2.  **Using AI Search**:
+    -   Click the **"AI"** button on the search bar to switch to AI mode. The bar will turn purple.
+    -   Type a natural language question about your infrastructure (e.g., "find all webservers in production" or "rocky linux hosts with 2 vcpus").
+    -   Press **Enter**. The AI will analyze your query and generate the appropriate filter pills.
+    -   You can then refine the search by adding more pills manually or asking another AI question.
+    -   Click the **"Classic"** button to switch back to manual filtering.
 
 3.  **Searching and Filtering (Classic Mode)**:
     -   Use the powerful search bar to drill down into your data. Examples:
@@ -403,9 +393,9 @@ Using a web server like Nginx is the most robust method. It correctly serves the
     -   This means your search request (likely containing a large list of fact paths for the AI) is too large for the Nginx default limit.
     -   Add `client_max_body_size 16m;` to the `server` block in your Nginx site configuration and restart Nginx.
 
--   **"AI search failed" or "AI chat failed"**:
+-   **"AI search failed"**:
     -   Ensure your Ollama instance is running and accessible from the backend server at the URL specified in the backend configuration (`OLLAMA_URL`).
-    -   Verify that the model names (`OLLAMA_MODEL`, `OLLAMA_EMBEDDING_MODEL`) are correct and have been pulled (`ollama pull llama3.1`).
+    -   Verify that the model name (`OLLAMA_MODEL`) is correct and has been pulled (`ollama pull llama3.1`).
     -   If using an OpenAI-compatible API, ensure `OLLAMA_API_FORMAT` is set to `openai`.
 
 -   **Data from a source fails to load (e.g., "AWX is not configured")**:
