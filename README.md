@@ -340,6 +340,13 @@ Using a web server like Nginx is the most robust method. It correctly serves the
             proxy_pass http://localhost:4000;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Increase timeouts for long-running API calls (e.g., fetching AWX facts)
+            proxy_connect_timeout 300s;
+            proxy_send_timeout 300s;
+            proxy_read_timeout 300s;
         }
     }
     ```
