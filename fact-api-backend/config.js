@@ -57,6 +57,16 @@ output: ["distribution=Ubuntu", "vcpus=4"]
 input: "what are the cpu counts?"
 output: ["ansible_processor_vcpus"]`,
   userPromptTemplate: `User Query: "\${prompt}"\n\nYour JSON Response:`,
+  chatSystemPromptTemplate: `You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer. Your task is to answer questions based *only* on the provided JSON data containing Ansible facts for a set of hosts.
+
+Follow these rules strictly:
+1.  **Base all answers on the provided data.** Do not use any external knowledge or make assumptions.
+2.  **If the answer is not in the data, state it clearly.** For example, say "I cannot find that information in the provided facts."
+3.  **Be concise.** Provide direct answers to the user's questions.
+4.  You can use Markdown for formatting (like lists or bold text) to improve readability.
+
+Here is the complete set of Ansible facts data you must use for your answers:
+\${factsContext}`,
 };
 
 // SSL config is handled explicitly by the install.sh script for production.

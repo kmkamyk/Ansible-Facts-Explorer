@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
 import { demoService } from '../services/demoService';
-import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey } from '../types';
+import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey, ChatMessage } from '../types';
 import SearchBar from './SearchBar';
 import FactTable from './FactTable';
 import PivotedFactTable from './PivotedFactTable';
@@ -13,8 +13,9 @@ import ThemeSwitcher from './ThemeSwitcher';
 import ViewSwitcher, { ViewMode } from './ViewSwitcher';
 import FactFilter from './FactFilter';
 import { DENSITY_THEME } from '../styles/densityTheme';
-import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, ExpandIcon, CompressIcon, ChevronDownIcon, ChartBarIcon } from './icons/Icons';
+import { DownloadIcon, PlayIcon, ExcelIcon, ClockIcon, ExpandIcon, CompressIcon, ChevronDownIcon, ChartBarIcon, ChatBubbleIcon } from './icons/Icons';
 import Dashboard from './Dashboard';
+import ChatWindow from './ChatWindow';
 
 type Theme = 'light' | 'dark';
 
@@ -191,6 +192,7 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
 
 
 const FactBrowser: React.FC<FactBrowserProps> = () => {
+  const [rawFacts, setRawFacts] = useState<AllHostFacts>({});
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
   const [searchPills, setSearchPills] = useState<string[]>([]);
   const [searchInputValue, setSearchInputValue] = useState(''); // For live input in search bar
@@ -227,6 +229,11 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   // State for dashboard
   const [isDashboardVisible, setIsDashboardVisible] = useState(false);
   const [chartFactSelections, setChartFactSelections] = useState<string[]>(['ansible_distribution', 'role']);
+
+  // State for AI Chat
+  const [isChatVisible, setIsChatVisible] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
 
   // Fetch service status on initial load
@@ -303,10 +310,13 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const handleLoadFacts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setRawFacts({});
     setAllFacts([]);
     setFactsLoaded(true);
     setIsFactFilterVisible(false);
     setScrollProgress(0);
+    // Reset chat on new data load
+    setChatMessages([]);
 
     try {
         let data: AllHostFacts;
@@ -318,6 +328,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         } else {
             data = await demoService.fetchFacts();
         }
+        setRawFacts(data);
         const flattenedData = flattenFactsForTable(data);
         setAllFacts(flattenedData);
 
@@ -352,6 +363,24 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         setIsAiLoading(false);
     }
   }, [allFactPaths]);
+
+  const handleSendMessage = useCallback(async (message: string) => {
+    if (!message.trim() || Object.keys(rawFacts).length === 0) return;
+
+    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }];
+    setChatMessages(newMessages);
+    setIsChatLoading(true);
+
+    try {
+        const aiResponse = await apiService.performAiChat(newMessages, rawFacts);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+    } catch (e: any) {
+        setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
+        console.error(e);
+    } finally {
+        setIsChatLoading(false);
+    }
+  }, [chatMessages, rawFacts]);
 
   const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
     const stringValue = String(value).trim();
@@ -554,6 +583,11 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const totalItemCount = viewMode === 'list' ? totalFactCount : totalHostCount;
   const displayedItemName = viewMode === 'list' ? (displayedItemCount === 1 ? 'fact' : 'facts') : (displayedItemCount === 1 ? 'host' : 'hosts');
   const totalItemName = viewMode === 'list' ? 'facts' : 'hosts';
+
+  // Logic for the AI Chat floating button state
+  const isAiEnabled = serviceStatus.ai.enabled;
+  const isChatButtonDisabled = !factsLoaded;
+  const chatButtonTitle = !factsLoaded ? 'Load facts to enable the AI Assistant.' : 'Open AI Assistant';
 
 
   return (
@@ -835,6 +869,25 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
             </div>
         </footer>
       )}
+
+      {!isStatusLoading && isAiEnabled && (
+        <button
+            onClick={() => setIsChatVisible(true)}
+            disabled={isChatButtonDisabled}
+            className="fixed bottom-6 right-6 z-50 bg-violet-600 text-white p-4 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:bg-violet-500 dark:focus:ring-offset-zinc-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:bg-violet-700 dark:enabled:hover:bg-violet-600 enabled:hover:scale-110"
+            title={chatButtonTitle}
+        >
+            <ChatBubbleIcon />
+        </button>
+      )}
+
+      <ChatWindow
+        isVisible={isChatVisible}
+        onClose={() => setIsChatVisible(false)}
+        messages={chatMessages}
+        onSendMessage={handleSendMessage}
+        isSending={isChatLoading}
+      />
     </div>
   );
 };

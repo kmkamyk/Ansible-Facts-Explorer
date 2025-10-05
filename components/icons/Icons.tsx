@@ -179,3 +179,15 @@ export const PlusIcon: React.FC = () => (
         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
     </svg>
 );
+
+export const ChatBubbleIcon: React.FC = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.839 8.839 0 01-4.083-.98L2 17l1.238-3.237A7.953 7.953 0 012 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM4.432 12.152a6.002 6.002 0 0011.136 0c.217-.324.332-.69.332-1.072 0-2.21-2.686-4-6-4s-6 1.79-6 4c0 .382.115.748.332 1.072z" clipRule="evenodd" />
+  </svg>
+);
+
+export const SendIcon: React.FC = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+  </svg>
+);

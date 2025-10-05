@@ -1,4 +1,4 @@
-import { AllHostFacts } from '../types';
+import { AllHostFacts, ChatMessage } from '../types';
 
 // The API base URL is now a relative path.
 // This allows the frontend to make API calls to the same host it was served from,
@@ -103,6 +103,33 @@ export const apiService = {
         console.error('Error during AI search API call:', error);
         if (error instanceof TypeError) {
             throw new Error('Could not connect to the backend for AI search.');
+        }
+        throw error;
+    }
+  },
+
+  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts): Promise<string> => {
+    const chatUrl = `${API_BASE_URL}/ai-chat`;
+    console.log('Performing AI chat...');
+    try {
+        const response = await fetch(chatUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ messages, factsContext }),
+        });
+
+        if (!response.ok) {
+            return handleApiError(response).then(() => { throw new Error("This should not be reached"); });
+        }
+        
+        const data = await response.json();
+        return data.response;
+    } catch (error) {
+        console.error('Error during AI chat API call:', error);
+        if (error instanceof TypeError) {
+            throw new Error('Could not connect to the backend for AI chat.');
         }
         throw error;
     }

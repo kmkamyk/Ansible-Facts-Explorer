@@ -478,6 +478,92 @@ app.post('/api/ai-search', async (req, res) => {
     }
 });
 
+// --- AI Chat Endpoint ---
+app.post('/api/ai-chat', async (req, res) => {
+    if (!ollamaConfig.useAiSearch) {
+        return res.status(403).json({ error: 'AI features are disabled by the administrator.' });
+    }
+    if (!ollamaConfig.url || !ollamaConfig.chatSystemPromptTemplate) {
+        return res.status(500).json({ error: 'AI chat service or prompt is not configured on the backend.' });
+    }
+
+    const { messages, factsContext } = req.body;
+    if (!messages || !Array.isArray(messages) || !factsContext) {
+        return res.status(400).json({ error: 'Missing or invalid "messages" or "factsContext" in request body.' });
+    }
+
+    const factsString = JSON.stringify(factsContext, null, 2);
+    const MAX_CONTEXT_CHARS = 100000; // ~100k characters safety limit
+    if (factsString.length > MAX_CONTEXT_CHARS) {
+        console.error(`[AI Chat] Facts context is too large: ${factsString.length} characters. Aborting.`);
+        return res.status(413).json({ error: `The loaded dataset is too large (${(factsString.length / 1024 / 1024).toFixed(2)} MB) for an AI chat session. Please filter the data first.` });
+    }
+
+    const systemPrompt = ollamaConfig.chatSystemPromptTemplate.replace('${factsContext}', factsString);
+
+    // Construct the message history for the API call
+    const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.filter(m => m.role !== 'error').map(({ role, content }) => ({ role, content }))
+    ];
+    
+    try {
+        let aiContent;
+        let endpointUrl, body;
+
+        if (ollamaConfig.apiFormat === 'openai') {
+            console.log(`[AI Chat] Sending prompt to OpenAI-compatible model '${ollamaConfig.model}'`);
+            endpointUrl = `${ollamaConfig.url}/v1/chat/completions`;
+            body = JSON.stringify({
+                model: ollamaConfig.model,
+                messages: apiMessages,
+                stream: false,
+            });
+        } else { // 'ollama' format, using the modern /api/chat endpoint
+            console.log(`[AI Chat] Sending prompt to Ollama model '${ollamaConfig.model}' via chat endpoint`);
+            endpointUrl = `${ollamaConfig.url}/api/chat`;
+            body = JSON.stringify({
+                model: ollamaConfig.model,
+                messages: apiMessages,
+                stream: false,
+            });
+        }
+      
+        const response = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[AI Chat] API responded with error ${response.status}: ${errorText}`);
+            throw new Error(`AI API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        // Response structure varies between OpenAI and Ollama chat
+        if (ollamaConfig.apiFormat === 'openai') {
+            aiContent = data.choices[0]?.message?.content;
+        } else {
+            aiContent = data.message?.content;
+        }
+
+        if (!aiContent) {
+            console.error('[AI Chat] Could not extract AI content from response:', data);
+            throw new Error('AI returned a response in an unexpected format.');
+        }
+
+        console.log('[AI Chat] Raw response from model:', aiContent);
+        res.json({ response: aiContent.trim() });
+
+    } catch (err) {
+        console.error(`[AI Chat] Error during AI request:`, err);
+        res.status(500).json({ error: err.message || 'Failed to get a response from the AI model.' });
+    }
+});
+
 
 // Start the server
 if (sslConfig.keyPath && sslConfig.certPath) {

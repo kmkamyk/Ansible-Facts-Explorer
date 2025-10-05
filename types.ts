@@ -28,3 +28,9 @@ export interface SortConfig {
   key: SortableKey;
   direction: SortDirection;
 }
+
+// Define chat message type
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'error';
+  content: string;
+}
