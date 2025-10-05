@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
@@ -364,34 +365,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     }
   }, [allFactPaths]);
 
-  const handleSendMessage = useCallback(async (message: string) => {
-    if (!message.trim() || Object.keys(rawFacts).length === 0) return;
-
-    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }];
-    setChatMessages(newMessages);
-    setIsChatLoading(true);
-
-    try {
-        const aiResponse = await apiService.performAiChat(newMessages, rawFacts);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
-    } catch (e: any) {
-        setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
-        console.error(e);
-    } finally {
-        setIsChatLoading(false);
-    }
-  }, [chatMessages, rawFacts]);
-
-  const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
-    const stringValue = String(value).trim();
-    if (stringValue && stringValue !== '---' && stringValue !== '(No data available)') {
-        const newPill = `"${stringValue}"`;
-        // Add new pill, avoiding duplicates
-        setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
-    }
-  }, []);
-
-  // ** Strict Row-Level AND Filtering Logic **
   const { searchedTableFacts, searchedDashboardFacts } = useMemo(() => {
     const trimmedInput = debouncedSearchInput.trim();
     const allFilters = trimmedInput ? [...new Set([...searchPills, trimmedInput])] : searchPills;
@@ -412,6 +385,46 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     return { searchedTableFacts: filteredRows, searchedDashboardFacts: filteredRows };
   }, [allFacts, searchPills, debouncedSearchInput]);
 
+  const handleSendMessage = useCallback(async (message: string) => {
+    if (!message.trim()) return;
+
+    // Use the currently filtered data as the context for the AI chat.
+    const hostsInFilter = [...new Set(searchedDashboardFacts.map(fact => fact.host))];
+    const factsForChatContext: AllHostFacts = {};
+    for (const host of hostsInFilter) {
+        if (rawFacts[host]) {
+            factsForChatContext[host] = rawFacts[host];
+        }
+    }
+
+    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }];
+    setChatMessages(newMessages);
+    setIsChatLoading(true);
+
+    try {
+        const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+    } catch (e: any) {
+        const contextTooLargeError = 'The provided data context is too large';
+        if (e.message && e.message.includes(contextTooLargeError)) {
+            setChatMessages(prev => [...prev, { role: 'error', content: 'The current data selection is too large for the AI to process. Please use the search filters to narrow down your results further before using the assistant.' }]);
+        } else {
+            setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
+        }
+        console.error(e);
+    } finally {
+        setIsChatLoading(false);
+    }
+  }, [chatMessages, rawFacts, searchedDashboardFacts]);
+
+  const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
+    const stringValue = String(value).trim();
+    if (stringValue && stringValue !== '---' && stringValue !== '(No data available)') {
+        const newPill = `"${stringValue}"`;
+        // Add new pill, avoiding duplicates
+        setSearchPills(prevPills => [...new Set([...prevPills, newPill])]);
+    }
+  }, []);
 
   const filteredFacts = useMemo(() => {
     // This now operates on the direct search results for the table.
@@ -442,8 +455,11 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
     const sortableItems = [...filteredFacts];
     sortableItems.sort((a, b) => {
-      const valA = a[sortConfig.key as keyof FactRow];
-      const valB = b[sortConfig.key as keyof FactRow];
+      // FIX: Cast row objects to `any` to allow indexing by a string-typed sort key.
+      // This resolves a TypeScript error where a general 'string' from sortConfig.key
+      // cannot be used to index the strongly-typed 'FactRow' object.
+      const valA = (a as any)[sortConfig.key];
+      const valB = (b as any)[sortConfig.key];
       
       if (valA == null && valB == null) return 0;
       if (valA == null) return 1;
