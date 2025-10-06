@@ -478,6 +478,38 @@ app.post('/api/ai-search', async (req, res) => {
     }
 });
 
+// --- Helper function to summarize large fact contexts ---
+const summarizeFacts = (factsContext) => {
+    const KEY_FACTS_TO_KEEP = [
+        'ansible_system',
+        'ansible_distribution',
+        'ansible_distribution_version',
+        'ansible_processor_vcpus',
+        'ansible_memtotal_mb',
+        'role',
+        'environment',
+        'ansible_kernel',
+        'ansible_fqdn',
+        '__awx_facts_modified_timestamp'
+    ];
+
+    const summarizedContext = {};
+    for (const host in factsContext) {
+        if (Object.prototype.hasOwnProperty.call(factsContext, host)) {
+            const originalFacts = factsContext[host];
+            const summarizedFacts = {};
+            for (const key of KEY_FACTS_TO_KEEP) {
+                if (originalFacts[key] !== undefined) {
+                    summarizedFacts[key] = originalFacts[key];
+                }
+            }
+            summarizedContext[host] = summarizedFacts;
+        }
+    }
+    return summarizedContext;
+};
+
+
 // --- AI Chat Endpoint ---
 app.post('/api/ai-chat', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
@@ -487,21 +519,24 @@ app.post('/api/ai-chat', async (req, res) => {
         return res.status(500).json({ error: 'AI chat service or prompt is not configured on the backend.' });
     }
 
-    const { messages, factsContext } = req.body;
+    let { messages, factsContext } = req.body;
     if (!messages || !Array.isArray(messages) || factsContext === undefined) {
         return res.status(400).json({ error: 'Missing or invalid "messages" or "factsContext" in request body.' });
     }
 
     const MAX_CHAT_CONTEXT_CHARS = 1024 * 1024; // 1MB limit
-    const factsString = JSON.stringify(factsContext, null, 2);
+    let factsString = JSON.stringify(factsContext, null, 2);
+    let contextSummaryMessage = '';
 
     if (factsString.length > MAX_CHAT_CONTEXT_CHARS) {
-        const errorMsg = 'The provided data context is too large for the AI model to process. Please use the search filters to narrow down the number of hosts or facts before using the AI Assistant.';
-        console.warn(`[AI Chat] Facts context is too large (${(factsString.length / 1024 / 1024).toFixed(2)} MB). Rejecting with 413. Message: ${errorMsg}`);
-        return res.status(413).json({ error: errorMsg });
+        console.warn(`[AI Chat] Facts context is too large (${(factsString.length / 1024 / 1024).toFixed(2)} MB). Summarizing...`);
+        const summarizedContext = summarizeFacts(factsContext);
+        factsString = JSON.stringify(summarizedContext, null, 2);
+        contextSummaryMessage = "Note: The provided fact data is a summary of key information because the full dataset was too large. Answer based on this summary.\n\n";
+        console.log(`[AI Chat] Summarized context size is now (${(factsString.length / 1024 / 1024).toFixed(2)} MB).`);
     }
     
-    const systemPrompt = ollamaConfig.chatSystemPromptTemplate.replace('${factsContext}', factsString);
+    const systemPrompt = contextSummaryMessage + ollamaConfig.chatSystemPromptTemplate.replace('${factsContext}', factsString);
 
     // Construct the message history for the API call
     const apiMessages = [

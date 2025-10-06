@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
@@ -455,11 +456,12 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
 
     const sortableItems = [...filteredFacts];
     sortableItems.sort((a, b) => {
-      // FIX: Cast row objects to `any` to allow indexing by a string-typed sort key.
-      // This resolves a TypeScript error where a general 'string' from sortConfig.key
-      // cannot be used to index the strongly-typed 'FactRow' object.
-      const valA = (a as any)[sortConfig.key];
-      const valB = (b as any)[sortConfig.key];
+      // FIX: The previous method of casting to `any` can be unreliable.
+      // A more type-safe approach is to cast the key to `keyof FactRow`,
+      // as we know list view sorting only uses valid FactRow keys.
+      const key = sortConfig.key as keyof FactRow;
+      const valA = a[key];
+      const valB = b[key];
       
       if (valA == null && valB == null) return 0;
       if (valA == null) return 1;
