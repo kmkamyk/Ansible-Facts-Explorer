@@ -192,6 +192,45 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
     return orTerms.some(term => matchSingleTerm(fact, term));
 };
 
+const generateContextFromFilteredFacts = (facts: FactRow[]): string => {
+    if (facts.length === 0) {
+        return "No data is currently visible in the search results.";
+    }
+
+    const factsByHost: Record<string, { factPath: string; value: any }[]> = {};
+    facts.forEach(fact => {
+        if (fact.factPath !== '---') {
+            if (!factsByHost[fact.host]) {
+                factsByHost[fact.host] = [];
+            }
+            factsByHost[fact.host].push({ factPath: fact.factPath, value: fact.value });
+        }
+    });
+
+    let contextString = "Here is a summary of the currently filtered data:\n\n";
+    const hosts = Object.keys(factsByHost).sort();
+
+    for (const host of hosts) {
+        contextString += `- Host: ${host}\n`;
+        factsByHost[host]
+            .sort((a, b) => a.factPath.localeCompare(b.factPath))
+            .forEach(({ factPath, value }) => {
+                // Use JSON.stringify to correctly handle different value types (strings, numbers, objects)
+                const valueString = JSON.stringify(value, null, 2);
+                contextString += `  - ${factPath}: ${valueString}\n`;
+            });
+        contextString += '\n';
+    }
+    
+    // Add a safety limit to prevent huge text blocks
+    const MAX_CONTEXT_LENGTH = 4000;
+    if (contextString.length > MAX_CONTEXT_LENGTH) {
+        contextString = contextString.substring(0, MAX_CONTEXT_LENGTH) + "\n... (data truncated due to length)";
+    }
+
+    return contextString;
+};
+
 
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [rawFacts, setRawFacts] = useState<AllHostFacts>({});
@@ -905,6 +944,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessage}
         isSending={isChatLoading}
+        onImportContext={() => generateContextFromFilteredFacts(searchedTableFacts)}
       />
     </div>
   );

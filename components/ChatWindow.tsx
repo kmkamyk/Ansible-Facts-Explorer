@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../types';
-import { SendIcon, XSmallIcon } from './icons/Icons';
+import { SendIcon, XSmallIcon, DocumentPlusIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface ChatWindowProps {
@@ -9,6 +9,7 @@ interface ChatWindowProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isSending: boolean;
+  onImportContext: () => string;
 }
 
 // A simple component to render text with basic Markdown (bold and lists).
@@ -37,7 +38,7 @@ const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
 };
 
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, onImportContext }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -69,6 +70,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
         e.preventDefault();
         handleSubmit(e as any);
     }
+  };
+
+  const handleImportClick = () => {
+    const contextText = onImportContext();
+    setInput(prev => (prev ? `${prev}\n\n${contextText}` : contextText));
+    textareaRef.current?.focus();
   };
 
   if (!isVisible) {
@@ -120,6 +127,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
 
       <div className="p-4 border-t border-slate-200 dark:border-zinc-800 flex-shrink-0">
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
+           <button
+            type="button"
+            onClick={handleImportClick}
+            disabled={isSending}
+            className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/70 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Import current search results as context"
+          >
+            <DocumentPlusIcon />
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
