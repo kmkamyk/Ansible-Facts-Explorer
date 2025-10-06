@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
 import { demoService } from '../services/demoService';
-import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey, ChatMessage } from '../types';
+import { AllHostFacts, FactRow, Density, SortConfig, SortDirection, SortableKey, ChatMessage, HostFactData } from '../types';
 import SearchBar from './SearchBar';
 import FactTable from './FactTable';
 import PivotedFactTable from './PivotedFactTable';
@@ -192,43 +192,45 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
     return orTerms.some(term => matchSingleTerm(fact, term));
 };
 
-const generateContextFromFilteredFacts = (facts: FactRow[]): string => {
-    if (facts.length === 0) {
-        return "No data is currently visible in the search results.";
-    }
+/**
+ * Reconstructs a nested AllHostFacts object from a flat array of FactRow objects.
+ * This is the inverse of flattenFactsForTable, used to prepare a precise
+ * context for the AI chat based on user-filtered data.
+ * @param factRows - A flat array of facts.
+ * @returns An AllHostFacts object.
+ */
+const reconstructFactsFromRows = (factRows: FactRow[]): AllHostFacts => {
+    const reconstructed: AllHostFacts = {};
 
-    const factsByHost: Record<string, { factPath: string; value: any }[]> = {};
-    facts.forEach(fact => {
-        if (fact.factPath !== '---') {
-            if (!factsByHost[fact.host]) {
-                factsByHost[fact.host] = [];
+    for (const row of factRows) {
+        if (row.factPath === '---') continue;
+
+        if (!reconstructed[row.host]) {
+            reconstructed[row.host] = {};
+            // Set the modified timestamp for the host from the first fact we see
+            if (row.modified) {
+                reconstructed[row.host].__awx_facts_modified_timestamp = row.modified;
             }
-            factsByHost[fact.host].push({ factPath: fact.factPath, value: fact.value });
         }
-    });
 
-    let contextString = "Here is a summary of the currently filtered data:\n\n";
-    const hosts = Object.keys(factsByHost).sort();
-
-    for (const host of hosts) {
-        contextString += `- Host: ${host}\n`;
-        factsByHost[host]
-            .sort((a, b) => a.factPath.localeCompare(b.factPath))
-            .forEach(({ factPath, value }) => {
-                // Use JSON.stringify to correctly handle different value types (strings, numbers, objects)
-                const valueString = JSON.stringify(value, null, 2);
-                contextString += `  - ${factPath}: ${valueString}\n`;
-            });
-        contextString += '\n';
+        const pathParts = row.factPath.split('.');
+        
+        // Use reduce to traverse or create the nested object structure
+        pathParts.reduce((acc: any, part: string, index: number) => {
+            if (index === pathParts.length - 1) {
+                // Last part of the path, assign the value
+                acc[part] = row.value;
+            } else {
+                // Create nested object if it doesn't exist
+                if (!acc[part] || typeof acc[part] !== 'object') {
+                    acc[part] = {};
+                }
+            }
+            return acc[part];
+        }, reconstructed[row.host] as HostFactData);
     }
     
-    // Add a safety limit to prevent huge text blocks
-    const MAX_CONTEXT_LENGTH = 4000;
-    if (contextString.length > MAX_CONTEXT_LENGTH) {
-        contextString = contextString.substring(0, MAX_CONTEXT_LENGTH) + "\n... (data truncated due to length)";
-    }
-
-    return contextString;
+    return reconstructed;
 };
 
 
@@ -275,6 +277,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [lockedChatContext, setLockedChatContext] = useState<FactRow[] | null>(null);
 
 
   // Fetch service status on initial load
@@ -358,6 +361,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setScrollProgress(0);
     // Reset chat on new data load
     setChatMessages([]);
+    setLockedChatContext(null);
 
     try {
         let data: AllHostFacts;
@@ -428,13 +432,20 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const handleSendMessage = useCallback(async (message: string) => {
     if (!message.trim()) return;
 
-    // Use the currently filtered data as the context for the AI chat.
-    const hostsInFilter = [...new Set(searchedDashboardFacts.map(fact => fact.host))];
-    const factsForChatContext: AllHostFacts = {};
-    for (const host of hostsInFilter) {
-        if (rawFacts[host]) {
-            factsForChatContext[host] = rawFacts[host];
-        }
+    let factsForChatContext: AllHostFacts;
+
+    if (lockedChatContext) {
+      // If a context is locked, use exactly that filtered data.
+      factsForChatContext = reconstructFactsFromRows(lockedChatContext);
+    } else {
+      // Default behavior: use all data for the hosts that are currently visible.
+      const hostsInFilter = [...new Set(searchedDashboardFacts.map(fact => fact.host))];
+      factsForChatContext = {};
+      for (const host of hostsInFilter) {
+          if (rawFacts[host]) {
+              factsForChatContext[host] = rawFacts[host];
+          }
+      }
     }
 
     const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }];
@@ -445,17 +456,12 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext);
         setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
     } catch (e: any) {
-        const contextTooLargeError = 'The provided data context is too large';
-        if (e.message && e.message.includes(contextTooLargeError)) {
-            setChatMessages(prev => [...prev, { role: 'error', content: 'The current data selection is too large for the AI to process. Please use the search filters to narrow down your results further before using the assistant.' }]);
-        } else {
-            setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
-        }
+        setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
         console.error(e);
     } finally {
         setIsChatLoading(false);
     }
-  }, [chatMessages, rawFacts, searchedDashboardFacts]);
+  }, [chatMessages, rawFacts, searchedDashboardFacts, lockedChatContext]);
 
   const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
     const stringValue = String(value).trim();
@@ -944,7 +950,9 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessage}
         isSending={isChatLoading}
-        onImportContext={() => generateContextFromFilteredFacts(searchedTableFacts)}
+        onSetContext={() => setLockedChatContext(searchedTableFacts)}
+        lockedContext={lockedChatContext}
+        onClearContext={() => setLockedChatContext(null)}
       />
     </div>
   );

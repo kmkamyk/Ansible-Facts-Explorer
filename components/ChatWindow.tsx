@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage } from '../types';
-import { SendIcon, XSmallIcon, DocumentPlusIcon } from './icons/Icons';
+import { ChatMessage, FactRow } from '../types';
+import { SendIcon, XSmallIcon, PinIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface ChatWindowProps {
@@ -9,7 +9,9 @@ interface ChatWindowProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isSending: boolean;
-  onImportContext: () => string;
+  onSetContext: () => void;
+  lockedContext: FactRow[] | null;
+  onClearContext: () => void;
 }
 
 // A simple component to render text with basic Markdown (bold and lists).
@@ -38,7 +40,7 @@ const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
 };
 
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, onImportContext }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, onSetContext, lockedContext, onClearContext }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -72,12 +74,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
     }
   };
 
-  const handleImportClick = () => {
-    const contextText = onImportContext();
-    setInput(prev => (prev ? `${prev}\n\n${contextText}` : contextText));
-    textareaRef.current?.focus();
-  };
-
   if (!isVisible) {
     return null;
   }
@@ -96,6 +92,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
           <XSmallIcon />
         </button>
       </header>
+
+      {lockedContext && (
+        <div className="p-2 bg-violet-100 dark:bg-violet-900/40 text-center text-xs text-violet-800 dark:text-violet-200 flex justify-between items-center gap-2">
+            <span>Kontekst AI jest ustawiony na bieżące wyniki wyszukiwania.</span>
+            <button 
+                onClick={onClearContext}
+                className="font-semibold underline hover:text-violet-600 dark:hover:text-violet-100"
+            >
+                Wyczyść
+            </button>
+        </div>
+      )}
 
       <div className="flex-1 p-4 overflow-y-auto space-y-4">
         {messages.map((msg, index) => (
@@ -129,12 +137,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
            <button
             type="button"
-            onClick={handleImportClick}
+            onClick={onSetContext}
             disabled={isSending}
             className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/70 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Import current search results as context"
+            title="Użyj bieżących wyników wyszukiwania jako kontekstu AI"
           >
-            <DocumentPlusIcon />
+            <PinIcon />
           </button>
           <textarea
             ref={textareaRef}

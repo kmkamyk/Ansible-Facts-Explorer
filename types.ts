@@ -1,4 +1,5 @@
 
+
 export type Density = 'compact' | 'comfortable' | 'spacious';
 
 export interface FactRow {
@@ -9,7 +10,10 @@ export interface FactRow {
   modified?: string;
 }
 
-export type HostFactData = Record<string, any>;
+export type HostFactData = {
+  __awx_facts_modified_timestamp?: string;
+  [key: string]: any;
+};
 
 export type AllHostFacts = Record<string, HostFactData>;
 
