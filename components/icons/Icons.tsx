@@ -142,8 +142,8 @@ export const DocumentTextIcon: React.FC = () => (
     </svg>
 );
 
-export const PinIcon: React.FC = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+export const PinIcon: React.FC<{className?: string}> = ({className = 'h-5 w-5'}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
         <path fillRule="evenodd" d="M14.042 3.018a.75.75 0 01.53.22l2.25 2.25a.75.75 0 01-.22 1.28l-2.012.503a11.5 11.5 0 01-7.58 7.58l-.504 2.013a.75.75 0 01-1.28.22l-2.25-2.25a.75.75 0 01.22-1.28l2.013-.503a11.5 11.5 0 017.58-7.58l.504-2.013a.75.75 0 01.76-.76zm-5.463 6.44a1 1 0 00-1.414 1.414l.004.004a1 1 0 001.41-.008l6-6a1 1 0 00-1.414-1.414l-6.002 6.002z" clipRule="evenodd" />
     </svg>
 );
