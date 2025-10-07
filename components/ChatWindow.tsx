@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage } from '../types';
-import { SendIcon, XSmallIcon } from './icons/Icons';
+import { ChatMessage, AllHostFacts } from '../types';
+import { SendIcon, XSmallIcon, DocumentTextIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface ChatWindowProps {
@@ -39,6 +39,7 @@ const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending }) => {
   const [input, setInput] = useState('');
+  const [contextToShow, setContextToShow] = useState<AllHostFacts | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -104,6 +105,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
               >
                 <SimpleMarkdown text={msg.content} />
               </div>
+              {msg.role === 'assistant' && msg.context && Object.keys(msg.context).length > 0 && (
+                 <button 
+                    onClick={() => setContextToShow(msg.context)} 
+                    title="View context provided to AI"
+                    className="p-1.5 rounded-full text-slate-400 dark:text-zinc-500 hover:bg-slate-200 dark:hover:bg-zinc-700 hover:text-violet-600 dark:hover:text-violet-400 transition-colors flex-shrink-0 self-center"
+                 >
+                    <DocumentTextIcon className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
           {isSending && (
@@ -141,6 +151,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
             </button>
           </form>
         </div>
+
+        {contextToShow && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20 animate-[fade-in_0.2s_ease-out]">
+            <div className="bg-white dark:bg-zinc-950 rounded-2xl shadow-xl w-11/12 max-w-2xl h-3/4 flex flex-col border dark:border-zinc-700">
+              <div className="flex justify-between items-center p-4 border-b dark:border-zinc-800">
+                <h3 className="font-semibold text-lg text-slate-800 dark:text-zinc-100">Context Provided to AI</h3>
+                <button onClick={() => setContextToShow(null)} className="p-1 rounded-full text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                  <XSmallIcon />
+                </button>
+              </div>
+              <div className="p-4 flex-1 overflow-auto">
+                <pre className="text-xs bg-slate-100 dark:bg-zinc-900 p-3 rounded-md ring-1 ring-slate-200 dark:ring-zinc-800">
+                  <code className="text-slate-700 dark:text-zinc-300">{JSON.stringify(contextToShow, null, 2)}</code>
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );

@@ -108,7 +108,7 @@ export const apiService = {
     }
   },
 
-  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<string> => {
+  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<{ response: string, context: AllHostFacts }> => {
     const chatUrl = `${API_BASE_URL}/ai-chat`;
     console.log('Performing AI chat...');
     try {
@@ -125,7 +125,7 @@ export const apiService = {
         }
         
         const data = await response.json();
-        return data.response;
+        return data;
     } catch (error) {
         console.error('Error during AI chat API call:', error);
         if (error instanceof TypeError) {
