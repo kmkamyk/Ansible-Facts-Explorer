@@ -154,8 +154,8 @@ export const DocumentPlusIcon: React.FC = () => (
   </svg>
 );
 
-export const CpuChipIcon: React.FC = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+export const CpuChipIcon: React.FC<{className?: string}> = ({className = 'h-6 w-6'}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
         <path d="M5 3a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V4a1 1 0 00-1-1H5zm0 2h10v10H5V5zm2 2a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1V8a1 1 0 00-1-1H7zm5 0a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1V8a1 1 0 00-1-1h-1zM7 12a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1v-1a1 1 0 00-1-1H7zm5 0a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 001-1v-1a1 1 0 00-1-1h-1z" />
         <path d="M1 5a1 1 0 011-1h1V3a1 1 0 112 0v1h8V3a1 1 0 112 0v1h1a1 1 0 011 1v1h1a1 1 0 110 2h-1v8h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1H5v1a1 1 0 11-2 0v-1H2a1 1 0 01-1-1v-1H0a1 1 0 110-2h1V6H0a1 1 0 010-2h1V5zm2 1v8h12V6H3z" />
     </svg>

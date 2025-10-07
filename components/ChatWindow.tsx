@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage } from '../types';
-import { SendIcon, XSmallIcon } from './icons/Icons';
+import { ChatMessage, AllHostFacts } from '../types';
+import { SendIcon, XSmallIcon, CpuChipIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface ChatWindowProps {
@@ -11,8 +11,47 @@ interface ChatWindowProps {
   isSending: boolean;
 }
 
+// --- Context Viewer Component for RAG Debugging ---
+interface ContextViewerProps {
+    context: AllHostFacts;
+}
+
+const ContextViewer: React.FC<ContextViewerProps> = ({ context }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    if (!context || Object.keys(context).length === 0) {
+        return null;
+    }
+
+    const hostCount = Object.keys(context).length;
+    const factCount = Object.values(context).reduce((total, hostFacts) => {
+        return total + Object.keys(hostFacts).filter(key => key !== '__awx_facts_modified_timestamp').length;
+    }, 0);
+
+    const contextString = JSON.stringify(context, null, 2);
+
+    return (
+        <div className="max-w-[80%] ml-11 -mt-2 mb-2 animate-[fade-in_0.3s_ease-out]">
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors bg-slate-200/60 dark:bg-zinc-700/60 px-2 py-1 rounded-full focus:outline-none focus:ring-1 focus:ring-violet-500"
+            >
+                <CpuChipIcon className="h-4 w-4" />
+                <span>{isExpanded ? 'Hide' : 'Show'} Context</span>
+                <span className="text-slate-400 dark:text-zinc-500">({hostCount} {hostCount === 1 ? 'host' : 'hosts'}, {factCount} {factCount === 1 ? 'fact' : 'facts'})</span>
+            </button>
+            {isExpanded && (
+                <div className="mt-2 relative">
+                    <pre className="p-3 bg-slate-100 dark:bg-zinc-950/70 ring-1 ring-slate-200 dark:ring-zinc-800 rounded-lg text-xs text-slate-700 dark:text-zinc-300 max-h-48 overflow-auto font-mono">
+                        <code>{contextString}</code>
+                    </pre>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // A simple component to render text with basic Markdown (bold and lists).
-// This avoids adding a full Markdown library dependency.
 const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
     const parts = text.split(/(\*\*.*?\*\*|\* .*)/g).filter(Boolean);
     return (
@@ -93,18 +132,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
 
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
           {messages.map((msg, index) => (
-            <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-              {msg.role !== 'user' && <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex-shrink-0" />}
-              <div
-                className={`max-w-[80%] rounded-2xl p-3 text-sm whitespace-pre-wrap ${
-                  msg.role === 'user' ? 'bg-violet-600 dark:bg-violet-500 text-white rounded-br-none' :
-                  msg.role === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200 rounded-bl-none' :
-                  'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-100 rounded-bl-none'
-                }`}
-              >
-                <SimpleMarkdown text={msg.content} />
+            <React.Fragment key={index}>
+              <div className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                {msg.role !== 'user' && <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex-shrink-0" />}
+                <div
+                  className={`max-w-[80%] rounded-2xl p-3 text-sm whitespace-pre-wrap ${
+                    msg.role === 'user' ? 'bg-violet-600 dark:bg-violet-500 text-white rounded-br-none' :
+                    msg.role === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200 rounded-bl-none' :
+                    'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-100 rounded-bl-none'
+                  }`}
+                >
+                  <SimpleMarkdown text={msg.content} />
+                </div>
               </div>
-            </div>
+              {msg.role === 'assistant' && msg.context && (
+                  <ContextViewer context={msg.context} />
+              )}
+            </React.Fragment>
           ))}
           {isSending && (
               <div className="flex items-start gap-3">
