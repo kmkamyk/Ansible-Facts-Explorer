@@ -12,11 +12,6 @@ interface ServiceStatus {
   ai: { enabled: boolean };
 }
 
-interface AiChatResponse {
-    response: string;
-    context: AllHostFacts;
-}
-
 /**
  * A robust error handler for fetch responses. It tries to parse the body as JSON,
  * but falls back to plain text if parsing fails. This prevents the client from
@@ -113,7 +108,7 @@ export const apiService = {
     }
   },
 
-  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<AiChatResponse> => {
+  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<string> => {
     const chatUrl = `${API_BASE_URL}/ai-chat`;
     console.log('Performing AI chat...');
     try {
@@ -130,7 +125,7 @@ export const apiService = {
         }
         
         const data = await response.json();
-        return data;
+        return data.response;
     } catch (error) {
         console.error('Error during AI chat API call:', error);
         if (error instanceof TypeError) {

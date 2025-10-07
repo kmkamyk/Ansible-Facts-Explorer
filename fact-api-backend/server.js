@@ -525,45 +525,6 @@ const buildRelevantContext = (fullContext, relevantPaths) => {
     return relevantContext;
 };
 
-/**
- * Builds a summary of the fact data when a specific query fails to retrieve relevant paths.
- * This provides the AI with general context for conversational questions.
- * @param {object} fullContext - The complete AllHostFacts object.
- * @returns {object} A summary object containing host count, host list, and example facts.
- */
-const buildSummaryContext = (fullContext) => {
-    const hostnames = Object.keys(fullContext);
-    const hostCount = hostnames.length;
-
-    if (hostCount === 0) {
-        return { summary: "The dataset is currently empty." };
-    }
-
-    const firstHostName = hostnames[0];
-    const firstHostFacts = fullContext[firstHostName];
-    
-    // Get top-level keys, excluding the timestamp and deep objects/arrays for brevity
-    const exampleFacts = {};
-    const topLevelKeys = Object.keys(firstHostFacts).filter(k => k !== '__awx_facts_modified_timestamp').slice(0, 5); // Limit to 5 example keys
-
-    for (const key of topLevelKeys) {
-        const value = firstHostFacts[key];
-        if (typeof value !== 'object' || value === null) {
-            exampleFacts[key] = value;
-        } else {
-             exampleFacts[key] = Array.isArray(value) ? 'Array[...]' : 'Object{...}';
-        }
-    }
-
-    return {
-        summary: `The dataset contains facts for ${hostCount} hosts.`,
-        hosts: hostnames.slice(0, 10), // Show up to 10 hostnames
-        example_facts_from_host: {
-            [firstHostName]: exampleFacts
-        }
-    };
-};
-
 // --- AI Chat Endpoint (with RAG) ---
 app.post('/api/ai-chat', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
@@ -628,22 +589,12 @@ app.post('/api/ai-chat', async (req, res) => {
         }
 
         const parsedRetrieval = parseAiJsonResponse(retrievalContent);
-        const relevantPaths = Array.isArray(parsedRetrieval) ? parsedRetrieval : (parsedRetrieval?.paths || []);
+        const relevantPaths = Array.isArray(parsedRetrieval) ? parsedRetrieval : (parsedRetrieval?.paths || []); // Handle if it returns { "paths": [...] }
         console.log(`[AI Chat - RAG] Found ${relevantPaths.length} relevant paths:`, relevantPaths);
 
         // ========== STAGE 2: CONTEXT BUILDING ==========
-        let relevantContext;
-        let factsString;
-
-        // If retrieval finds nothing, build a summary context for general questions.
-        if (relevantPaths.length === 0 && userQuestion.length > 0) {
-            console.log('[AI Chat - RAG] No specific paths found. Building a summary context for a general query.');
-            relevantContext = buildSummaryContext(factsContext);
-            factsString = JSON.stringify(relevantContext, null, 2);
-        } else {
-            relevantContext = buildRelevantContext(factsContext, relevantPaths);
-            factsString = JSON.stringify(relevantContext, null, 2);
-        }
+        const relevantContext = buildRelevantContext(factsContext, relevantPaths);
+        const factsString = JSON.stringify(relevantContext, null, 2);
 
         // ========== STAGE 3: GENERATION ==========
         console.log('[AI Chat - RAG] Stage 3: Generating final answer...');
@@ -684,7 +635,7 @@ app.post('/api/ai-chat', async (req, res) => {
         }
 
         console.log('[AI Chat] Raw final response from model:', finalAiContent);
-        res.json({ response: finalAiContent.trim(), context: relevantContext });
+        res.json({ response: finalAiContent.trim() });
 
     } catch (err) {
         console.error(`[AI Chat] Error during RAG process:`, err);

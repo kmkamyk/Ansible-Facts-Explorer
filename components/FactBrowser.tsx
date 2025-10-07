@@ -397,8 +397,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setIsChatLoading(true);
 
     try {
-        const { response: aiResponse, context: aiContext } = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse, context: aiContext }]);
+        const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
     } catch (e: any) {
         setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
         console.error(e);
