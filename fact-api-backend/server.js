@@ -508,16 +508,22 @@ const buildRelevantContext = (fullContext, relevantPaths) => {
 
     for (const host in fullContext) {
         if (Object.prototype.hasOwnProperty.call(fullContext, host)) {
-            relevantContext[host] = {};
+            const hostContext = {}; // Create a temporary object for the host
             const hostFacts = fullContext[host];
-            if (hostFacts.__awx_facts_modified_timestamp) {
-                relevantContext[host].__awx_facts_modified_timestamp = hostFacts.__awx_facts_modified_timestamp;
-            }
 
             for (const path of relevantPaths) {
                 const value = getNestedValue(hostFacts, path);
                 if (value !== undefined) {
-                    setNestedValue(relevantContext[host], path, value);
+                    setNestedValue(hostContext, path, value);
+                }
+            }
+
+            // Only add the host to the final context if we actually found facts for it.
+            if (Object.keys(hostContext).length > 0) {
+                relevantContext[host] = hostContext;
+                // Also carry over the timestamp if it exists.
+                if (hostFacts.__awx_facts_modified_timestamp) {
+                    relevantContext[host].__awx_facts_modified_timestamp = hostFacts.__awx_facts_modified_timestamp;
                 }
             }
         }
