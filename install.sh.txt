@@ -235,13 +235,18 @@ const ollamaConfig = {
     'input: "what are the cpu counts?"\\n' +
     'output: ["ansible_processor_vcpus"]',
   userPromptTemplate: 'User Query: "\\\${prompt}"\\n\\nYour JSON Response:',
+  retrievalSystemPromptTemplate: 'You are an AI data retrieval specialist. Your goal is to identify which specific data points are needed to answer a user\\'s question. ' +
+    'Based on the user\\'s query, you must select the most relevant "fact paths" from the provided list. ' +
+    'Return ONLY a JSON array of strings containing the selected paths. Do not add any explanation or preamble. ' +
+    'If no specific facts seem relevant, return an empty array.\\n\\n' +
+    'List of available fact paths:\\n\\\${allFactPaths}',
   chatSystemPromptTemplate: 'You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer. Your task is to answer questions based *only* on the provided JSON data containing Ansible facts for a set of hosts.\\n\\n' +
     'Follow these rules strictly:\\n' +
     '1.  **Base all answers on the provided data.** Do not use any external knowledge or make assumptions.\\n' +
     '2.  **If the answer is not in the data, state it clearly.** For example, say "I cannot find that information in the provided facts."\\n' +
     '3.  **Be concise.** Provide direct answers to the user\\'s questions.\\n' +
     '4.  You can use Markdown for formatting (like lists or bold text) to improve readability.\\n\\n' +
-    'Here is the complete set of Ansible facts data you must use for your answers:\\n' +
+    'Here is the relevant set of Ansible facts data you must use for your answers:\\n' +
     '\\\${factsContext}',
 };
 
