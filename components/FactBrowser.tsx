@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
@@ -398,8 +397,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setIsChatLoading(true);
 
     try {
-        const { response: aiResponse, context: usedContext } = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse, context: usedContext }]);
+        const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
     } catch (e: any) {
         setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
         console.error(e);

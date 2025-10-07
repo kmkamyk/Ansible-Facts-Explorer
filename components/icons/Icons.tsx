@@ -136,8 +136,8 @@ export const ServerIcon: React.FC = () => (
     </svg>
 );
 
-export const DocumentTextIcon: React.FC<{className?: string}> = ({className = 'h-6 w-6'}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+export const DocumentTextIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
         <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 1a1 1 0 000 2h8a1 1 0 100-2H6zM6 9a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h4a1 1 0 100-2H6z" clipRule="evenodd" />
     </svg>
 );

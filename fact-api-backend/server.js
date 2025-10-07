@@ -508,22 +508,16 @@ const buildRelevantContext = (fullContext, relevantPaths) => {
 
     for (const host in fullContext) {
         if (Object.prototype.hasOwnProperty.call(fullContext, host)) {
-            const hostContext = {}; // Create a temporary object for the host
+            relevantContext[host] = {};
             const hostFacts = fullContext[host];
+            if (hostFacts.__awx_facts_modified_timestamp) {
+                relevantContext[host].__awx_facts_modified_timestamp = hostFacts.__awx_facts_modified_timestamp;
+            }
 
             for (const path of relevantPaths) {
                 const value = getNestedValue(hostFacts, path);
                 if (value !== undefined) {
-                    setNestedValue(hostContext, path, value);
-                }
-            }
-
-            // Only add the host to the final context if we actually found facts for it.
-            if (Object.keys(hostContext).length > 0) {
-                relevantContext[host] = hostContext;
-                // Also carry over the timestamp if it exists.
-                if (hostFacts.__awx_facts_modified_timestamp) {
-                    relevantContext[host].__awx_facts_modified_timestamp = hostFacts.__awx_facts_modified_timestamp;
+                    setNestedValue(relevantContext[host], path, value);
                 }
             }
         }
@@ -641,7 +635,7 @@ app.post('/api/ai-chat', async (req, res) => {
         }
 
         console.log('[AI Chat] Raw final response from model:', finalAiContent);
-        res.json({ response: finalAiContent.trim(), context: relevantContext });
+        res.json({ response: finalAiContent.trim() });
 
     } catch (err) {
         console.error(`[AI Chat] Error during RAG process:`, err);

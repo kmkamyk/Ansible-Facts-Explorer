@@ -1,6 +1,5 @@
 
 
-
 export type Density = 'compact' | 'comfortable' | 'spacious';
 
 export interface FactRow {
@@ -38,5 +37,4 @@ export interface SortConfig {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'error';
   content: string;
-  context?: AllHostFacts;
 }
