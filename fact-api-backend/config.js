@@ -57,6 +57,7 @@ output: ["distribution=Ubuntu", "vcpus=4"]
 input: "what are the cpu counts?"
 output: ["ansible_processor_vcpus"]`,
   userPromptTemplate: `User Query: "\${prompt}"\n\nYour JSON Response:`,
+  retrievalSystemPromptTemplate: 'You are an AI data retrieval specialist. Your goal is to identify which specific data points are needed to answer a user\'s question. Based on the user\'s query, you must select the most relevant "fact paths" from the provided list. Return ONLY a JSON array of strings containing the selected paths. Do not add any explanation or preamble. If no specific facts seem relevant, return an empty array.\n\nList of available fact paths:\n${allFactPaths}',
   chatSystemPromptTemplate: `You are a helpful and knowledgeable AI assistant for a tool called Ansible Facts Explorer. Your task is to answer questions based *only* on the provided JSON data containing Ansible facts for a set of hosts.
 
 Follow these rules strictly:
@@ -65,7 +66,7 @@ Follow these rules strictly:
 3.  **Be concise.** Provide direct answers to the user's questions.
 4.  You can use Markdown for formatting (like lists or bold text) to improve readability.
 
-Here is the complete set of Ansible facts data you must use for your answers:
+Here is the relevant set of Ansible facts data you must use for your answers:
 \${factsContext}`,
 };
 

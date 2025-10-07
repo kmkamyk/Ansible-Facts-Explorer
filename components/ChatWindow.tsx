@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, FactRow } from '../types';
-import { SendIcon, XSmallIcon, PinIcon } from './icons/Icons';
+import { ChatMessage } from '../types';
+import { SendIcon, XSmallIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface ChatWindowProps {
@@ -9,9 +9,6 @@ interface ChatWindowProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isSending: boolean;
-  onSetContext: () => void;
-  lockedContext: FactRow[] | null;
-  onClearContext: () => void;
 }
 
 // A simple component to render text with basic Markdown (bold and lists).
@@ -40,9 +37,8 @@ const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
 };
 
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, onSetContext, lockedContext, onClearContext }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending }) => {
   const [input, setInput] = useState('');
-  const [isContextModalVisible, setIsContextModalVisible] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -95,32 +91,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
           </button>
         </header>
 
-        {lockedContext && (
-          <div className="p-2 bg-violet-100 dark:bg-violet-900/40 text-xs text-violet-800 dark:text-violet-200 flex justify-between items-center gap-2">
-              <span className="flex items-center gap-1.5">
-                  <PinIcon className="h-4 w-4 flex-shrink-0" />
-                  <span>
-                      Kontekst AI jest ustawiony na {lockedContext.length} {lockedContext.length === 1 ? 'fakt' : (lockedContext.length > 1 && lockedContext.length < 5 ? 'fakty' : 'faktów')}.
-                  </span>
-              </span>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                      onClick={() => setIsContextModalVisible(true)}
-                      className="font-semibold underline hover:text-violet-600 dark:hover:text-violet-100"
-                  >
-                      Podgląd
-                  </button>
-                  <span className="text-violet-300 dark:text-violet-700">|</span>
-                  <button
-                      onClick={onClearContext}
-                      className="font-semibold underline hover:text-violet-600 dark:hover:text-violet-100"
-                  >
-                      Wyczyść
-                  </button>
-              </div>
-          </div>
-        )}
-
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
           {messages.map((msg, index) => (
             <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
@@ -151,15 +121,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
 
         <div className="p-4 border-t border-slate-200 dark:border-zinc-800 flex-shrink-0">
           <form onSubmit={handleSubmit} className="flex items-end gap-2">
-            <button
-              type="button"
-              onClick={onSetContext}
-              disabled={isSending}
-              className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/70 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Użyj bieżących wyników wyszukiwania jako kontekstu AI"
-            >
-              <PinIcon />
-            </button>
             <textarea
               ref={textareaRef}
               value={input}
@@ -181,40 +142,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
           </form>
         </div>
       </div>
-      
-      {isContextModalVisible && lockedContext && (
-          <div
-            className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 animate-[fade-in_0.2s_ease-out]"
-            onClick={() => setIsContextModalVisible(false)}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="context-modal-title"
-          >
-            <div
-              className="bg-white dark:bg-zinc-900 w-full max-w-2xl max-h-[80vh] rounded-lg shadow-xl flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-zinc-800">
-                <h4 id="context-modal-title" className="font-semibold text-slate-800 dark:text-zinc-100">
-                  Kontekst AI ({lockedContext.length} {lockedContext.length === 1 ? 'fakt' : 'faktów'})
-                </h4>
-                <button
-                  onClick={() => setIsContextModalVisible(false)}
-                  className="p-1 rounded-full text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-                  title="Close"
-                  aria-label="Close context view"
-                >
-                  <XSmallIcon />
-                </button>
-              </header>
-              <div className="flex-1 p-4 overflow-auto">
-                <pre className="text-xs text-slate-700 dark:text-zinc-300 bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-md">
-                  {JSON.stringify(lockedContext, null, 2)}
-                </pre>
-              </div>
-            </div>
-          </div>
-      )}
     </>
   );
 };

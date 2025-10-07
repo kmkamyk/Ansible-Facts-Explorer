@@ -478,125 +478,167 @@ app.post('/api/ai-search', async (req, res) => {
     }
 });
 
-// --- Helper function to summarize large fact contexts ---
-const summarizeFacts = (factsContext) => {
-    const KEY_FACTS_TO_KEEP = [
-        'ansible_system',
-        'ansible_distribution',
-        'ansible_distribution_version',
-        'ansible_processor_vcpus',
-        'ansible_memtotal_mb',
-        'role',
-        'environment',
-        'ansible_kernel',
-        'ansible_fqdn',
-        '__awx_facts_modified_timestamp'
-    ];
+/**
+ * Builds a new, nested fact object containing only the data for the specified relevant paths.
+ * @param {object} fullContext - The complete AllHostFacts object.
+ * @param {string[]} relevantPaths - An array of dot-notation fact paths to include.
+ * @returns {object} A new AllHostFacts object with the filtered data.
+ */
+const buildRelevantContext = (fullContext, relevantPaths) => {
+    const relevantContext = {};
+    if (!relevantPaths || relevantPaths.length === 0) {
+        return {};
+    }
 
-    const summarizedContext = {};
-    for (const host in factsContext) {
-        if (Object.prototype.hasOwnProperty.call(factsContext, host)) {
-            const originalFacts = factsContext[host];
-            const summarizedFacts = {};
-            for (const key of KEY_FACTS_TO_KEEP) {
-                if (originalFacts[key] !== undefined) {
-                    summarizedFacts[key] = originalFacts[key];
+    const getNestedValue = (obj, path) => path.split('.').reduce((o, k) => (o && o[k] !== undefined) ? o[k] : undefined, obj);
+    
+    const setNestedValue = (obj, path, value) => {
+        const keys = path.split('.');
+        keys.reduce((acc, key, index) => {
+            if (index === keys.length - 1) {
+                acc[key] = value;
+            } else {
+                if (!acc[key] || typeof acc[key] !== 'object') {
+                    acc[key] = {};
                 }
             }
-            summarizedContext[host] = summarizedFacts;
+            return acc[key];
+        }, obj);
+    };
+
+    for (const host in fullContext) {
+        if (Object.prototype.hasOwnProperty.call(fullContext, host)) {
+            relevantContext[host] = {};
+            const hostFacts = fullContext[host];
+            if (hostFacts.__awx_facts_modified_timestamp) {
+                relevantContext[host].__awx_facts_modified_timestamp = hostFacts.__awx_facts_modified_timestamp;
+            }
+
+            for (const path of relevantPaths) {
+                const value = getNestedValue(hostFacts, path);
+                if (value !== undefined) {
+                    setNestedValue(relevantContext[host], path, value);
+                }
+            }
         }
     }
-    return summarizedContext;
+    return relevantContext;
 };
 
-
-// --- AI Chat Endpoint ---
+// --- AI Chat Endpoint (with RAG) ---
 app.post('/api/ai-chat', async (req, res) => {
     if (!ollamaConfig.useAiSearch) {
         return res.status(403).json({ error: 'AI features are disabled by the administrator.' });
     }
-    if (!ollamaConfig.url || !ollamaConfig.chatSystemPromptTemplate) {
-        return res.status(500).json({ error: 'AI chat service or prompt is not configured on the backend.' });
+    if (!ollamaConfig.url || !ollamaConfig.chatSystemPromptTemplate || !ollamaConfig.retrievalSystemPromptTemplate) {
+        return res.status(500).json({ error: 'AI chat service or prompts are not configured on the backend.' });
     }
 
-    let { messages, factsContext } = req.body;
-    if (!messages || !Array.isArray(messages) || factsContext === undefined) {
-        return res.status(400).json({ error: 'Missing or invalid "messages" or "factsContext" in request body.' });
+    const { messages, factsContext, allFactPaths } = req.body;
+    if (!messages || !Array.isArray(messages) || !factsContext || !allFactPaths) {
+        return res.status(400).json({ error: 'Missing or invalid "messages", "factsContext", or "allFactPaths" in request body.' });
     }
 
-    const MAX_CHAT_CONTEXT_CHARS = 1024 * 1024; // 1MB limit
-    let factsString = JSON.stringify(factsContext, null, 2);
-    let contextSummaryMessage = '';
-
-    if (factsString.length > MAX_CHAT_CONTEXT_CHARS) {
-        console.warn(`[AI Chat] Facts context is too large (${(factsString.length / 1024 / 1024).toFixed(2)} MB). Summarizing...`);
-        const summarizedContext = summarizeFacts(factsContext);
-        factsString = JSON.stringify(summarizedContext, null, 2);
-        contextSummaryMessage = "Note: The provided fact data is a summary of key information because the full dataset was too large. Answer based on this summary.\n\n";
-        console.log(`[AI Chat] Summarized context size is now (${(factsString.length / 1024 / 1024).toFixed(2)} MB).`);
+    const userQuestion = messages.length > 0 ? messages[messages.length - 1].content : '';
+    if (!userQuestion) {
+        return res.status(400).json({ error: 'Cannot process an empty user message.' });
     }
-    
-    const systemPrompt = contextSummaryMessage + ollamaConfig.chatSystemPromptTemplate.replace('${factsContext}', factsString);
 
-    // Construct the message history for the API call
-    const apiMessages = [
-        { role: 'system', content: systemPrompt },
-        ...messages.filter(m => m.role !== 'error').map(({ role, content }) => ({ role, content }))
-    ];
-    
     try {
-        let aiContent;
+        // ========== STAGE 1: RETRIEVAL ==========
+        console.log('[AI Chat - RAG] Stage 1: Retrieving relevant fact paths...');
+        const retrievalSystemPrompt = ollamaConfig.retrievalSystemPromptTemplate.replace('${allFactPaths}', allFactPaths.join('\n'));
+        const retrievalUserPrompt = `User question: "${userQuestion}"`;
+        
+        let retrievalContent;
+        if (ollamaConfig.apiFormat === 'openai') {
+            const response = await fetch(`${ollamaConfig.url}/v1/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: ollamaConfig.model,
+                    response_format: { type: "json_object" },
+                    messages: [{ role: 'system', content: retrievalSystemPrompt }, { role: 'user', content: retrievalUserPrompt }],
+                    stream: false,
+                }),
+            });
+             if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`AI Retrieval API error (OpenAI): ${response.statusText} - ${errorText}`);
+            }
+            const data = await response.json();
+            retrievalContent = data.choices[0]?.message?.content;
+        } else {
+            const retrievalPrompt = `${retrievalSystemPrompt}\n\n${retrievalUserPrompt}`;
+            const response = await fetch(`${ollamaConfig.url}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: ollamaConfig.model,
+                    prompt: retrievalPrompt,
+                    stream: false,
+                    format: 'json',
+                }),
+            });
+            if (!response.ok) {
+                 const errorText = await response.text();
+                throw new Error(`AI Retrieval API error (Ollama): ${response.statusText} - ${errorText}`);
+            }
+            const data = await response.json();
+            retrievalContent = data.response;
+        }
+
+        const parsedRetrieval = parseAiJsonResponse(retrievalContent);
+        const relevantPaths = Array.isArray(parsedRetrieval) ? parsedRetrieval : (parsedRetrieval?.paths || []); // Handle if it returns { "paths": [...] }
+        console.log(`[AI Chat - RAG] Found ${relevantPaths.length} relevant paths:`, relevantPaths);
+
+        // ========== STAGE 2: CONTEXT BUILDING ==========
+        const relevantContext = buildRelevantContext(factsContext, relevantPaths);
+        const factsString = JSON.stringify(relevantContext, null, 2);
+
+        // ========== STAGE 3: GENERATION ==========
+        console.log('[AI Chat - RAG] Stage 3: Generating final answer...');
+        const generationSystemPrompt = ollamaConfig.chatSystemPromptTemplate.replace('${factsContext}', factsString);
+        
+        const apiMessages = [
+            { role: 'system', content: generationSystemPrompt },
+            ...messages.filter(m => m.role !== 'error').map(({ role, content }) => ({ role, content }))
+        ];
+
+        let finalAiContent;
         let endpointUrl, body;
 
         if (ollamaConfig.apiFormat === 'openai') {
-            console.log(`[AI Chat] Sending prompt to OpenAI-compatible model '${ollamaConfig.model}'`);
             endpointUrl = `${ollamaConfig.url}/v1/chat/completions`;
-            body = JSON.stringify({
-                model: ollamaConfig.model,
-                messages: apiMessages,
-                stream: false,
-            });
-        } else { // 'ollama' format, using the modern /api/chat endpoint
-            console.log(`[AI Chat] Sending prompt to Ollama model '${ollamaConfig.model}' via chat endpoint`);
+            body = JSON.stringify({ model: ollamaConfig.model, messages: apiMessages, stream: false });
+        } else {
             endpointUrl = `${ollamaConfig.url}/api/chat`;
-            body = JSON.stringify({
-                model: ollamaConfig.model,
-                messages: apiMessages,
-                stream: false,
-            });
+            body = JSON.stringify({ model: ollamaConfig.model, messages: apiMessages, stream: false });
         }
       
-        const response = await fetch(endpointUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: body,
-        });
+        const response = await fetch(endpointUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[AI Chat] API responded with error ${response.status}: ${errorText}`);
-            throw new Error(`AI API error: ${response.statusText}`);
+            throw new Error(`AI Generation API error: ${response.statusText} - ${errorText}`);
         }
-
         const data = await response.json();
         
-        // Response structure varies between OpenAI and Ollama chat
         if (ollamaConfig.apiFormat === 'openai') {
-            aiContent = data.choices[0]?.message?.content;
+            finalAiContent = data.choices[0]?.message?.content;
         } else {
-            aiContent = data.message?.content;
+            finalAiContent = data.message?.content;
         }
 
-        if (!aiContent) {
-            console.error('[AI Chat] Could not extract AI content from response:', data);
-            throw new Error('AI returned a response in an unexpected format.');
+        if (!finalAiContent) {
+            throw new Error('AI returned a response in an unexpected format during generation.');
         }
 
-        console.log('[AI Chat] Raw response from model:', aiContent);
-        res.json({ response: aiContent.trim() });
+        console.log('[AI Chat] Raw final response from model:', finalAiContent);
+        res.json({ response: finalAiContent.trim() });
 
     } catch (err) {
-        console.error(`[AI Chat] Error during AI request:`, err);
+        console.error(`[AI Chat] Error during RAG process:`, err);
         res.status(500).json({ error: err.message || 'Failed to get a response from the AI model.' });
     }
 });

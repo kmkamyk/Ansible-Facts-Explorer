@@ -192,48 +192,6 @@ const matchesPill = (fact: FactRow, pill: string): boolean => {
     return orTerms.some(term => matchSingleTerm(fact, term));
 };
 
-/**
- * Reconstructs a nested AllHostFacts object from a flat array of FactRow objects.
- * This is the inverse of flattenFactsForTable, used to prepare a precise
- * context for the AI chat based on user-filtered data.
- * @param factRows - A flat array of facts.
- * @returns An AllHostFacts object.
- */
-const reconstructFactsFromRows = (factRows: FactRow[]): AllHostFacts => {
-    const reconstructed: AllHostFacts = {};
-
-    for (const row of factRows) {
-        if (row.factPath === '---') continue;
-
-        if (!reconstructed[row.host]) {
-            reconstructed[row.host] = {};
-            // Set the modified timestamp for the host from the first fact we see
-            if (row.modified) {
-                reconstructed[row.host].__awx_facts_modified_timestamp = row.modified;
-            }
-        }
-
-        const pathParts = row.factPath.split('.');
-        
-        // Use reduce to traverse or create the nested object structure
-        pathParts.reduce((acc: any, part: string, index: number) => {
-            if (index === pathParts.length - 1) {
-                // Last part of the path, assign the value
-                acc[part] = row.value;
-            } else {
-                // Create nested object if it doesn't exist
-                if (!acc[part] || typeof acc[part] !== 'object') {
-                    acc[part] = {};
-                }
-            }
-            return acc[part];
-        }, reconstructed[row.host] as HostFactData);
-    }
-    
-    return reconstructed;
-};
-
-
 const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [rawFacts, setRawFacts] = useState<AllHostFacts>({});
   const [allFacts, setAllFacts] = useState<FactRow[]>([]);
@@ -277,7 +235,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [lockedChatContext, setLockedChatContext] = useState<FactRow[] | null>(null);
 
 
   // Fetch service status on initial load
@@ -361,7 +318,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setScrollProgress(0);
     // Reset chat on new data load
     setChatMessages([]);
-    setLockedChatContext(null);
 
     try {
         let data: AllHostFacts;
@@ -432,28 +388,16 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const handleSendMessage = useCallback(async (message: string) => {
     if (!message.trim()) return;
 
-    let factsForChatContext: AllHostFacts;
-
-    if (lockedChatContext) {
-      // If a context is locked, use exactly that filtered data.
-      factsForChatContext = reconstructFactsFromRows(lockedChatContext);
-    } else {
-      // Default behavior: use all data for the hosts that are currently visible.
-      const hostsInFilter = [...new Set(searchedDashboardFacts.map(fact => fact.host))];
-      factsForChatContext = {};
-      for (const host of hostsInFilter) {
-          if (rawFacts[host]) {
-              factsForChatContext[host] = rawFacts[host];
-          }
-      }
-    }
+    // Use all loaded facts as the context for the AI.
+    // The RAG process on the backend will intelligently select what's needed.
+    const factsForChatContext: AllHostFacts = rawFacts;
 
     const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }];
     setChatMessages(newMessages);
     setIsChatLoading(true);
 
     try {
-        const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext);
+        const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
         setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
     } catch (e: any) {
         setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
@@ -461,7 +405,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     } finally {
         setIsChatLoading(false);
     }
-  }, [chatMessages, rawFacts, searchedDashboardFacts, lockedChatContext]);
+  }, [chatMessages, rawFacts, allFactPaths]);
 
   const handleCellClick = useCallback((value: string | number | boolean | null | object) => {
     const stringValue = String(value).trim();
@@ -950,9 +894,6 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessage}
         isSending={isChatLoading}
-        onSetContext={() => setLockedChatContext(searchedTableFacts)}
-        lockedContext={lockedChatContext}
-        onClearContext={() => setLockedChatContext(null)}
       />
     </div>
   );

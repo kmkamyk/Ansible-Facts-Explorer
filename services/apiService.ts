@@ -108,7 +108,7 @@ export const apiService = {
     }
   },
 
-  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts): Promise<string> => {
+  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<string> => {
     const chatUrl = `${API_BASE_URL}/ai-chat`;
     console.log('Performing AI chat...');
     try {
@@ -117,7 +117,7 @@ export const apiService = {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ messages, factsContext }),
+            body: JSON.stringify({ messages, factsContext, allFactPaths }),
         });
 
         if (!response.ok) {
