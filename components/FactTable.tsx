@@ -42,11 +42,10 @@ const FactTable: React.FC<FactTableProps> = ({ facts, density, showModifiedColum
   }, [facts, onScrollProgress]);
   
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(event.currentTarget.scrollTop);
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+    setScrollTop(scrollTop);
 
-    const { scrollTop, clientHeight } = event.currentTarget;
-    const totalHeight = facts.length * rowHeight;
-    const scrollableHeight = totalHeight - clientHeight;
+    const scrollableHeight = scrollHeight - clientHeight;
 
     if (scrollableHeight <= 0) {
       onScrollProgress(0);
