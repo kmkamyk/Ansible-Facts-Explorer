@@ -271,6 +271,9 @@ The backend is the data hub. It must be configured and running before the fronte
     OLLAMA_URL=http://localhost:11434
     # The name of the model Ollama should use (e.g., llama3.1, mistral)
     OLLAMA_MODEL=llama3.1
+    # Optional. The name of a dedicated model for the RAG retrieval step.
+    # Defaults to the main OLLAMA_MODEL if not set.
+    OLLAMA_EMBEDDING_MODEL=
     # The API format for your LLM service. Use 'ollama' for Ollama's native API,
     # or 'openai' for OpenAI-compatible endpoints (like llama.cpp with --api).
     OLLAMA_API_FORMAT=ollama

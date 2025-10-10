@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# Ansible Facts Explorer (AFE) Installation Script v3.7 for RHEL-based Systems
+# Ansible Facts Explorer (AFE) Installation Script v3.8 for RHEL-based Systems
 # ==============================================================================
 # This script automates the deployment of the AFE application, including:
 # - A dedicated PostgreSQL database using the default system version.
@@ -21,6 +21,7 @@ AWX_URL=""
 AWX_TOKEN=""
 OLLAMA_URL=""
 OLLAMA_MODEL=""
+OLLAMA_EMBEDDING_MODEL=""
 OLLAMA_API_FORMAT=""
 USE_AI_SEARCH_FLAG="false"
 # --- End of user configuration ---
@@ -114,6 +115,10 @@ function interactive_setup() {
         read -p "Enter the Ollama model to use [llama3.1]: " OLLAMA_MODEL
         OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.1"} # Set default if empty
         
+        # Prompt for Embedding Model
+        read -p "Enter the dedicated embedding model to use (optional, defaults to main model): " OLLAMA_EMBEDDING_MODEL
+        OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-"$OLLAMA_MODEL"}
+
         # Prompt for API Format
         read -p "Enter the AI API format (ollama or openai for llama.cpp) [ollama]: " OLLAMA_API_FORMAT
         OLLAMA_API_FORMAT=${OLLAMA_API_FORMAT:-"ollama"}
@@ -212,6 +217,7 @@ const awxConfig = {
 const ollamaConfig = {
   url: '$OLLAMA_URL',
   model: '$OLLAMA_MODEL',
+  embeddingModel: '$OLLAMA_EMBEDDING_MODEL',
   useAiSearch: $USE_AI_SEARCH_FLAG,
   apiFormat: '$OLLAMA_API_FORMAT',
   systemPromptTemplate: 'You are a helpful AI assistant that converts natural language queries into structured search filters for a tool called Ansible Facts Explorer. Your task is to generate a JSON array of strings, where each string is a search filter pill.\\n\\n' +
@@ -588,6 +594,7 @@ case "$1" in
     if [[ "$USE_AI_SEARCH_FLAG" == "true" ]]; then
       log_info "Ollama URL:           $OLLAMA_URL"
       log_info "Ollama Model:         $OLLAMA_MODEL"
+      log_info "Ollama Embed Model:   $OLLAMA_EMBEDDING_MODEL"
       log_info "AI API Format:        $OLLAMA_API_FORMAT"
     fi
     log_info "Backend config file:  $BACKEND_DIR/config.js"

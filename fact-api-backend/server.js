@@ -86,10 +86,12 @@ async function fetchAwxApi(endpoint) {
 }
 
 // --- Ollama API Helper ---
-async function callOllamaApi(systemPrompt, userMessages) {
+async function callOllamaApi(systemPrompt, userMessages, modelOverride) {
     if (!ollamaConfig.url) {
         throw new Error('Ollama URL is not configured.');
     }
+    
+    const modelToUse = modelOverride || ollamaConfig.model;
 
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -103,7 +105,7 @@ async function callOllamaApi(systemPrompt, userMessages) {
         // OpenAI-compatible endpoint (like llama-cpp-python)
         endpoint += '/v1/chat/completions';
         body = JSON.stringify({
-            model: ollamaConfig.model,
+            model: modelToUse,
             messages: messages,
             response_format: { type: 'json_object' }
         });
@@ -112,7 +114,7 @@ async function callOllamaApi(systemPrompt, userMessages) {
         endpoint += '/api/chat';
         const lastMessage = messages.pop(); // Ollama puts the last prompt in a separate field
         body = JSON.stringify({
-            model: ollamaConfig.model,
+            model: modelToUse,
             messages: messages,
             prompt: lastMessage ? lastMessage.content : '',
             format: 'json',
@@ -359,7 +361,7 @@ app.post('/api/ai-chat', async (req, res) => {
         // --- RAG Stage 1: Retrieval ---
         console.log("AI Chat - Stage 1: Retrieving relevant fact paths...");
         const retrievalSystemPrompt = ollamaConfig.retrievalSystemPromptTemplate.replace('${allFactPaths}', allFactPaths.join('\n'));
-        const retrievalResponse = await callOllamaApi(retrievalSystemPrompt, [{ role: 'user', content: lastUserMessage }]);
+        const retrievalResponse = await callOllamaApi(retrievalSystemPrompt, [{ role: 'user', content: lastUserMessage }], ollamaConfig.embeddingModel);
         
         let relevantFactPaths = [];
         try {
