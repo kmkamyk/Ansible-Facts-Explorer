@@ -1,682 +1,433 @@
 // server.js
-
 const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+const http = require('http');
 const https = require('https');
 const fs = require('fs');
-const { Pool } = require('pg');
-const cors = require('cors');
+
 const { dbConfig, awxConfig, sslConfig, ollamaConfig } = require('./config');
 
 const app = express();
-const port = 4000;
+const PORT = 4000;
 
-// Initialize the PostgreSQL connection pool
-const pool = new Pool(dbConfig);
-
-// Allow requests from your frontend application
+// Middleware
 app.use(cors());
-// Increase the body size limit to handle large fact path lists for AI search
-app.use(express.json({ limit: '16mb' }));
+// Increase the body limit to handle potentially large fact context payloads for AI chat
+app.use(express.json({ limit: '10mb' }));
 
-
-// --- Helper function to count facts in a way that matches frontend's row count ---
-const countTotalFacts = (allHostFacts) => {
-  const countLeafNodes = (obj) => {
-    if (typeof obj !== 'object' || obj === null) {
-      return 0;
-    }
-    let count = 0;
-    for (const key in obj) {
-      if (key === '__awx_facts_modified_timestamp') continue;
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const value = obj[key];
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          count += countLeafNodes(value);
-        } else {
-          count++; // Leaf node
-        }
-      }
-    }
-    return count;
-  };
-
-  let totalFactsForFrontend = 0;
-  for (const host in allHostFacts) {
-    if (Object.prototype.hasOwnProperty.call(allHostFacts, host)) {
-      const factCount = countLeafNodes(allHostFacts[host]);
-      // The frontend creates one "no data" row for hosts with 0 facts.
-      totalFactsForFrontend += Math.max(1, factCount);
-    }
-  }
-  return totalFactsForFrontend;
-};
-
-
-// --- Status Check Logic ---
-const isAwxConfigured = () => {
-    return !!awxConfig.url && !!awxConfig.token && awxConfig.url !== 'https://awx.example.com' && awxConfig.token !== 'YOUR_SECRET_AWX_TOKEN';
-};
-
-const checkDbConnection = async () => {
-    try {
-        const client = await pool.connect();
-        client.release();
-        return { configured: true };
-    } catch (error) {
-        console.error("Database connection check failed:", error.message);
-        return { configured: false, error: error.message };
-    }
-};
-
-// --- AWX Data Fetching Logic (Refactored for Robust Concurrency) ---
-const fetchFactsFromAwx = async () => {
-  if (!isAwxConfigured()) {
-    throw new Error('AWX is not configured on the backend. Please set AWX_URL and AWX_TOKEN environment variables.');
-  }
-
-  console.log(`[AWX Fetch] Using AWX URL: ${awxConfig.url}`);
-  console.log(`[AWX Fetch] Concurrency limit set to: ${awxConfig.concurrencyLimit}`);
-  console.log(`[AWX Fetch] Request timeout set to: ${awxConfig.requestTimeout}ms`);
-
-  const baseFetchOptions = {
-    headers: {
-      'Authorization': `Bearer ${awxConfig.token}`,
-      'Content-Type': 'application/json',
-    },
-  };
-
-  const allHosts = [];
-  let currentUrl = new URL('/api/v2/hosts/?page_size=100', awxConfig.url).href;
-  let pageNum = 1;
-
-  console.log(`[AWX Fetch] Starting to fetch hosts from AWX...`);
-  while (currentUrl) {
-    console.log(`[AWX Fetch] Fetching hosts page ${pageNum} from: ${currentUrl}`);
-    const response = await fetch(currentUrl, baseFetchOptions);
-    if (!response.ok) {
-      console.error(`[AWX Fetch] Error response from AWX when fetching hosts: ${response.status} ${response.statusText}`);
-      const errorBody = await response.text();
-      console.error(`[AWX Fetch] Error body: ${errorBody}`);
-      throw new Error(`Failed to fetch hosts list: ${response.statusText} (${response.status})`);
-    }
-    const data = await response.json();
-    allHosts.push(...data.results);
-    currentUrl = data.next ? new URL(data.next, awxConfig.url).href : null;
-    pageNum++;
-  }
-  
-  const totalHosts = allHosts.length;
-  console.log(`[AWX Fetch] AUDIT: Found ${totalHosts} total hosts. Sorting and fetching facts...`);
-  if (totalHosts === 0) {
-    return {};
-  }
-  
-  // Sort hosts for deterministic processing order, as suggested by the user.
-  allHosts.sort((a, b) => a.name.localeCompare(b.name));
-
-  const hostMap = new Map(allHosts.map(h => [h.name, h]));
-  
-  // This function processes a single host and returns a result object.
-  // It no longer mutates shared state, preventing race conditions.
-  const processHost = async (host) => {
-    if (!host) return null;
-    
-    const hostWithMeta = hostMap.get(host.name);
-    const maxRetries = 3;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), awxConfig.requestTimeout);
-      
-      try {
-        const factsUrl = new URL(host.related.ansible_facts, awxConfig.url).href;
-        const factsResponse = await fetch(factsUrl, { ...baseFetchOptions, signal: controller.signal });
-        clearTimeout(timeoutId);
-        
-        if (factsResponse.status === 404) {
-          return { status: 'no_facts', hostName: host.name, facts: {} };
-        } 
-        
-        if (!factsResponse.ok) {
-          throw new Error(`HTTP error ${factsResponse.status}: ${factsResponse.statusText}`);
-        }
-
-        const facts = await factsResponse.json();
-        if (hostWithMeta?.ansible_facts_modified) {
-            facts.__awx_facts_modified_timestamp = hostWithMeta.ansible_facts_modified;
-        }
-        return { status: 'success', hostName: host.name, facts };
-
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-          console.error(`[AWX Fetch] Attempt ${attempt}/${maxRetries} for host '${host.name}' timed out.`);
-        } else {
-          console.error(`[AWX Fetch] Attempt ${attempt}/${maxRetries} for host '${host.name}' failed:`, error.message);
-        }
-        if (attempt < maxRetries) {
-          await new Promise(res => setTimeout(res, 1000));
-        }
-      }
-    }
-
-    const errorMessage = `Failed to fetch facts after ${maxRetries} attempts.`;
-    console.error(`[AWX Fetch] All ${maxRetries} attempts failed for host '${host.name}'. Skipping.`);
-    return { status: 'failure', hostName: host.name, error: errorMessage, facts: { error: errorMessage } };
-  };
-  
-  // --- Robust Concurrency Management: Process chunks concurrently, aggregate serially ---
-  console.log(`[AWX Fetch] Processing hosts in chunks with a concurrency limit of ${awxConfig.concurrencyLimit}.`);
-  const concurrencyLimit = awxConfig.concurrencyLimit;
-  
-  const allHostFacts = {};
-  let processedCount = 0;
-  let successCount = 0;
-  let failureCount = 0;
-  let noFactsCount = 0;
-
-  for (let i = 0; i < totalHosts; i += concurrencyLimit) {
-    const chunk = allHosts.slice(i, i + concurrencyLimit);
-    const promises = chunk.map(host => processHost(host));
-    
-    const results = await Promise.all(promises);
-
-    // Process results serially to prevent race conditions on counters and the final object.
-    for (const result of results) {
-        if (!result) continue;
-
-        processedCount++;
-        allHostFacts[result.hostName] = result.facts;
-        
-        if (result.status === 'success') successCount++;
-        else if (result.status === 'failure') failureCount++;
-        else if (result.status === 'no_facts') noFactsCount++;
-    }
-    console.log(`[AWX Fetch Progress] Processed ${processedCount}/${totalHosts} | Success: ${successCount} | Failures: ${failureCount} | No Facts: ${noFactsCount}`);
-  }
-
-  const totalIndividualFacts = countTotalFacts(allHostFacts);
-
-  console.log('[AWX Fetch] Finished fetching all facts from AWX.');
-  console.log(`[AWX Fetch Summary] Total Hosts Found: ${totalHosts} | Processed: ${processedCount} | Success: ${successCount} | Failures: ${failureCount} | No Facts: ${noFactsCount}`);
-  console.log(`[AWX Fetch Summary] ===> Total facts to be imported (frontend row count): ${totalIndividualFacts.toLocaleString()}`);
-  
-  if (totalHosts !== processedCount) {
-    console.error(`[AWX Fetch AUDIT FAILED] Mismatch between found hosts (${totalHosts}) and processed hosts (${processedCount}). This indicates a potential issue.`);
-  } else {
-    console.log(`[AWX Fetch AUDIT PASSED] All ${totalHosts} discovered hosts were processed.`);
-  }
-  return allHostFacts;
-};
-
-// --- New Service Status Endpoint ---
-app.get('/api/status', async (req, res) => {
-    console.log('Received request for service status...');
-    const dbStatus = await checkDbConnection();
-    const status = {
-        awx: {
-            configured: isAwxConfigured(),
-        },
-        db: {
-            configured: dbStatus.configured,
-        },
-        ai: {
-            enabled: ollamaConfig.useAiSearch && !!ollamaConfig.url,
-        }
-    };
-    console.log('Service status:', status);
-    res.json(status);
-});
-
-// --- Unified API Endpoint ---
-// The frontend calls this endpoint with ?source=db or ?source=awx
-app.get('/api/facts', async (req, res) => {
-  const { source } = req.query;
-
-  try {
-    let data;
-    if (source === 'db') {
-      console.log('Received request for facts from database...');
-      let result;
-      try {
-        // First, try to fetch with the modified_at column
-        result = await pool.query('SELECT hostname, data, modified_at FROM facts');
-      } catch (err) {
-        // Check if the error is because the column doesn't exist
-        // PostgreSQL error code for "undefined column" is 42703
-        if (err.code === '42703' && err.message.includes('"modified_at"')) {
-          console.warn('Column "modified_at" not found in "facts" table. Fetching data without it.');
-          // If it does not exist, fetch without it
-          result = await pool.query('SELECT hostname, data FROM facts');
-        } else {
-          // For any other error, re-throw it to be handled by the main catch block
-          throw err;
-        }
-      }
-      
-      const allHostFacts = {};
-      for (const row of result.rows) {
-          // The `row.modified_at` will exist or be undefined based on the successful query.
-          // This check correctly handles both cases.
-          if (row.data && row.modified_at) {
-              row.data.__awx_facts_modified_timestamp = row.modified_at.toISOString();
-          }
-          allHostFacts[row.hostname] = row.data || {};
-      }
-      data = allHostFacts;
-      console.log(`Fetched data for ${Object.keys(data).length} hosts from DB.`);
-
-    } else if (source === 'awx') {
-      console.log('Received request for facts from AWX...');
-      data = await fetchFactsFromAwx();
-      console.log(`Fetched data for ${Object.keys(data).length} hosts from AWX.`);
-
-    } else {
-      return res.status(400).json({ error: 'Invalid or missing "source" query parameter. Use "db" or "awx".' });
-    }
-    
-    res.json(data);
-
-  } catch (err) {
-    console.error(`Error during data fetch for source "${source}":`, err);
-    res.status(500).json({ error: err.message || 'Failed to fetch data from the specified source.' });
-  }
-});
-
-
-/**
- * A robust parser for handling potentially malformed JSON responses from an LLM.
- * It handles markdown code fences and extracts the first valid JSON object or array.
- * @param {string} rawContent - The raw string response from the AI model.
- * @returns {object | null} The parsed JSON object, or null if parsing fails.
- */
-const parseAiJsonResponse = (rawContent) => {
-    if (!rawContent || typeof rawContent !== 'string') {
-        console.warn('[AI Parse] AI content is empty or not a string.');
-        return null;
-    }
-
-    let content = rawContent.trim();
-    
-    // 1. Handle Markdown Fences (most common issue)
-    const markdownMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (markdownMatch && markdownMatch[1]) {
-        console.log('[AI Parse] Extracted content from Markdown code fence.');
-        content = markdownMatch[1].trim();
-    }
-
-    // 2. Try direct parsing first
-    try {
-        return JSON.parse(content);
-    } catch (e) {
-        console.warn('[AI Parse] Direct JSON.parse failed. Attempting fallback extraction.');
-    }
-
-    // 3. Fallback: find the first occurrence of a JSON object or array
-    const jsonRegex = /({[\s\S]*}|\[[\s\S]*\])/;
-    const match = content.match(jsonRegex);
-    if (match && match[0]) {
-        try {
-            const parsed = JSON.parse(match[0]);
-            console.log('[AI Parse] Successfully extracted and parsed JSON with fallback regex.');
-            return parsed;
-        } catch (e) {
-            console.error('[AI Parse] Fallback JSON parsing also failed after extraction.', e.message);
+// --- Database Helper ---
+let pool;
+function getDbClient() {
+    if (!pool) {
+        if (!dbConfig.host || !dbConfig.user || !dbConfig.database) {
+            console.warn('Database is not configured. Skipping pool creation.');
             return null;
         }
+        pool = new Pool(dbConfig);
+        pool.on('error', (err, client) => {
+            console.error('Unexpected error on idle PostgreSQL client', err);
+            process.exit(-1);
+        });
     }
-    
-    console.error('[AI Parse] All parsing attempts failed.');
-    return null;
-};
+    return pool;
+}
 
-
-// --- AI Search Endpoint ---
-app.post('/api/ai-search', async (req, res) => {
-    if (!ollamaConfig.useAiSearch) {
-        return res.status(403).json({ error: 'AI search feature is disabled by the administrator.' });
-    }
-    if (!ollamaConfig.url || !ollamaConfig.systemPromptTemplate) {
-        return res.status(500).json({ error: 'AI service or prompt is not configured on the backend.' });
-    }
-
-    const { prompt, allFactPaths } = req.body;
-    if (!prompt || !allFactPaths || !Array.isArray(allFactPaths)) {
-        return res.status(400).json({ error: 'Missing or invalid "prompt" or "allFactPaths" in request body.' });
-    }
-
-    // =========================================================================
-    // ** Scalability Enhancement for AI Search **
-    // Instead of sending all fact paths, pre-filter them based on keywords
-    // from the user's prompt. This keeps the context sent to the LLM small
-    // and relevant, preventing token limit errors and improving performance.
-    // =========================================================================
-    let relevantFactPaths = allFactPaths;
-    const MAX_FACT_PATHS_FOR_AI = 200; // Safety limit
-
-    if (allFactPaths.length > MAX_FACT_PATHS_FOR_AI) {
-        console.log(`[AI Search] Pre-filtering ${allFactPaths.length} fact paths...`);
-        
-        const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'with', 'for', 'of', 'in', 'on', 'at', 'all', 'show', 'me', 'find', 'get', 'list']);
-        const keywords = new Set(
-            prompt.toLowerCase()
-                  .replace(/[^\w\s]/g, '')
-                  .split(/\s+/)
-                  .filter(word => word && !stopWords.has(word))
-        );
-
-        if (keywords.size > 0) {
-            console.log(`[AI Search] Using keywords: ${Array.from(keywords).join(', ')}`);
-            const matchedPaths = new Set();
-            for (const path of allFactPaths) {
-                const lowerPath = path.toLowerCase();
-                for (const keyword of keywords) {
-                    if (lowerPath.includes(keyword)) {
-                        matchedPaths.add(path);
-                        break; 
-                    }
-                }
-            }
-            
-            if (matchedPaths.size > 0) {
-                relevantFactPaths = Array.from(matchedPaths);
-            }
-        }
-        
-        if (relevantFactPaths.length > MAX_FACT_PATHS_FOR_AI) {
-            relevantFactPaths = relevantFactPaths.slice(0, MAX_FACT_PATHS_FOR_AI);
-        }
-
-        console.log(`[AI Search] Sending ${relevantFactPaths.length} relevant fact paths to AI model.`);
-    }
-
-
-    const systemPrompt = ollamaConfig.systemPromptTemplate
-        .replace('${allFactPaths}', relevantFactPaths.join(', '));
-    
-    const userPrompt = (ollamaConfig.userPromptTemplate || 'User Query: "${prompt}"\n\nYour JSON Response:')
-        .replace('${prompt}', prompt);
+// --- Generic Fetch Helper with Timeout ---
+async function fetchWithTimeout(url, options = {}, timeout = awxConfig.requestTimeout) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
 
     try {
-        let aiContent;
-
-        if (ollamaConfig.apiFormat === 'openai') {
-            console.log(`[AI Search] Sending prompt to OpenAI-compatible model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
-            const response = await fetch(`${ollamaConfig.url}/v1/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: ollamaConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ],
-                    stream: false,
-                }),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`[AI Search] OpenAI-compatible API responded with error ${response.status}: ${errorText}`);
-                throw new Error(`AI API error: ${response.statusText}`);
-            }
-            const data = await response.json();
-            aiContent = data.choices[0]?.message?.content;
-
-        } else {
-            const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
-            console.log(`[AI Search] Sending prompt to Ollama model '${ollamaConfig.model}' at ${ollamaConfig.url}`);
-            const response = await fetch(`${ollamaConfig.url}/api/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: ollamaConfig.model,
-                    prompt: combinedPrompt,
-                    stream: false,
-                    format: 'json',
-                }),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`[AI Search] Ollama API responded with error ${response.status}: ${errorText}`);
-                throw new Error(`Ollama API error: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            aiContent = data.response;
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timed out after ${timeout / 1000} seconds`);
         }
-      
-        console.log('[AI Search] Raw content from model:', aiContent);
-        
-        const parsedContent = parseAiJsonResponse(aiContent);
-
-        if (!parsedContent) {
-            console.error(`[AI Search] Could not parse the following response from the AI model: \n---\n${aiContent}\n---`);
-            throw new Error('AI returned a response that could not be understood. Please try rephrasing your query.');
-        }
-
-        if (Array.isArray(parsedContent)) {
-            console.log('[AI Search] Successfully generated pills:', parsedContent);
-            res.json(parsedContent);
-        } else if (typeof parsedContent === 'object' && parsedContent !== null) {
-            console.warn('[AI Search] Parsed content is an object, not an array. Converting to filter pills.');
-            const convertedPills = Object.entries(parsedContent).map(([key, value]) => {
-                if (value === null || value === '' || value === true) return key;
-                return `${key}=${value}`;
-            });
-            console.log('[AI Search] Successfully converted object to pills:', convertedPills);
-            res.json(convertedPills);
-        } else {
-            console.error('[AI Search] Parsed content is valid JSON but not an array or a convertible object:', parsedContent);
-            throw new Error('AI did not return a valid JSON array or object.');
-        }
-
-    } catch (err) {
-        console.error(`[AI Search] Error during AI request:`, err);
-        res.status(500).json({ error: err.message || 'Failed to generate search pills from AI.' });
+        throw error;
     }
-});
+}
 
+
+// --- AWX API Helpers ---
 /**
- * Builds a new, nested fact object containing only the data for the specified relevant paths.
- * @param {object} fullContext - The complete AllHostFacts object.
- * @param {string[]} relevantPaths - An array of dot-notation fact paths to include.
- * @returns {object} A new AllHostFacts object with the filtered data.
+ * Fetches paginated results from the AWX API.
+ * @param {string} endpoint The API endpoint to fetch (e.g., '/api/v2/hosts/').
+ * @returns {Promise<Array<any>>} A promise that resolves to an array of all results.
  */
-const buildRelevantContext = (fullContext, relevantPaths) => {
-    const relevantContext = {};
-    if (!relevantPaths || relevantPaths.length === 0) {
-        return {};
-    }
+async function fetchAwxApi(endpoint) {
+    let results = [];
+    let nextUrl = `${awxConfig.url}${endpoint}`;
+    const headers = { 'Authorization': `Bearer ${awxConfig.token}` };
 
-    const getNestedValue = (obj, path) => path.split('.').reduce((o, k) => (o && o[k] !== undefined) ? o[k] : undefined, obj);
-    
-    const setNestedValue = (obj, path, value) => {
-        const keys = path.split('.');
-        keys.reduce((acc, key, index) => {
-            if (index === keys.length - 1) {
-                acc[key] = value;
-            } else {
-                if (!acc[key] || typeof acc[key] !== 'object') {
-                    acc[key] = {};
-                }
-            }
-            return acc[key];
-        }, obj);
-    };
-
-    for (const host in fullContext) {
-        if (Object.prototype.hasOwnProperty.call(fullContext, host)) {
-            relevantContext[host] = {};
-            const hostFacts = fullContext[host];
-            if (hostFacts.__awx_facts_modified_timestamp) {
-                relevantContext[host].__awx_facts_modified_timestamp = hostFacts.__awx_facts_modified_timestamp;
-            }
-
-            for (const path of relevantPaths) {
-                const value = getNestedValue(hostFacts, path);
-                if (value !== undefined) {
-                    setNestedValue(relevantContext[host], path, value);
-                }
-            }
-        }
-    }
-    return relevantContext;
-};
-
-// --- AI Chat Endpoint (with RAG) ---
-app.post('/api/ai-chat', async (req, res) => {
-    if (!ollamaConfig.useAiSearch) {
-        return res.status(403).json({ error: 'AI features are disabled by the administrator.' });
-    }
-    if (!ollamaConfig.url || !ollamaConfig.chatSystemPromptTemplate || !ollamaConfig.retrievalSystemPromptTemplate) {
-        return res.status(500).json({ error: 'AI chat service or prompts are not configured on the backend.' });
-    }
-
-    const { messages, factsContext, allFactPaths } = req.body;
-    if (!messages || !Array.isArray(messages) || !factsContext || !allFactPaths) {
-        return res.status(400).json({ error: 'Missing or invalid "messages", "factsContext", or "allFactPaths" in request body.' });
-    }
-
-    const userQuestion = messages.length > 0 ? messages[messages.length - 1].content : '';
-    if (!userQuestion) {
-        return res.status(400).json({ error: 'Cannot process an empty user message.' });
-    }
-
-    try {
-        // ========== STAGE 1: RETRIEVAL ==========
-        console.log('[AI Chat - RAG] Stage 1: Retrieving relevant fact paths...');
-        const retrievalSystemPrompt = ollamaConfig.retrievalSystemPromptTemplate.replace('${allFactPaths}', allFactPaths.join('\n'));
-        const retrievalUserPrompt = `User question: "${userQuestion}"`;
-        
-        let retrievalContent;
-        if (ollamaConfig.apiFormat === 'openai') {
-            const response = await fetch(`${ollamaConfig.url}/v1/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: ollamaConfig.model,
-                    response_format: { type: "json_object" },
-                    messages: [{ role: 'system', content: retrievalSystemPrompt }, { role: 'user', content: retrievalUserPrompt }],
-                    stream: false,
-                }),
-            });
-             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`AI Retrieval API error (OpenAI): ${response.statusText} - ${errorText}`);
-            }
-            const data = await response.json();
-            retrievalContent = data.choices[0]?.message?.content;
-        } else {
-            const retrievalPrompt = `${retrievalSystemPrompt}\n\n${retrievalUserPrompt}`;
-            const response = await fetch(`${ollamaConfig.url}/api/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: ollamaConfig.model,
-                    prompt: retrievalPrompt,
-                    stream: false,
-                    format: 'json',
-                }),
-            });
+    while (nextUrl) {
+        try {
+            const response = await fetchWithTimeout(nextUrl, { headers });
             if (!response.ok) {
-                 const errorText = await response.text();
-                throw new Error(`AI Retrieval API error (Ollama): ${response.statusText} - ${errorText}`);
+                const errorBody = await response.text();
+                console.error(`AWX API Error (${response.status}): ${errorBody}`);
+                throw new Error(`AWX API request failed for ${nextUrl} with status ${response.status}: ${response.statusText}`);
             }
             const data = await response.json();
-            retrievalContent = data.response;
+            results = results.concat(data.results);
+            nextUrl = data.next ? `${awxConfig.url}${data.next}` : null;
+        } catch (error) {
+            console.error(`Failed to fetch from AWX API endpoint ${nextUrl}:`, error);
+            throw error; // Re-throw to be caught by the route handler
         }
+    }
+    return results;
+}
 
-        const parsedRetrieval = parseAiJsonResponse(retrievalContent);
-        const relevantPaths = Array.isArray(parsedRetrieval) ? parsedRetrieval : (parsedRetrieval?.paths || []); // Handle if it returns { "paths": [...] }
-        console.log(`[AI Chat - RAG] Found ${relevantPaths.length} relevant paths:`, relevantPaths);
+// --- Ollama API Helper ---
+async function callOllamaApi(systemPrompt, userMessages) {
+    if (!ollamaConfig.url) {
+        throw new Error('Ollama URL is not configured.');
+    }
 
-        // ========== STAGE 2: CONTEXT BUILDING ==========
-        // If the retrieval step fails or finds no paths, default to using the full context.
-        // This makes the chat more robust against retrieval failures or general questions.
-        let contextForGeneration = factsContext; 
-        if (relevantPaths && relevantPaths.length > 0) {
-            console.log('[AI Chat - RAG] Building a focused context with relevant paths.');
-            contextForGeneration = buildRelevantContext(factsContext, relevantPaths);
-        } else {
-            console.log('[AI Chat - RAG] No specific paths retrieved. Using full facts context for generation.');
-        }
-        const factsString = JSON.stringify(contextForGeneration, null, 2);
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        ...userMessages
+    ];
 
-        // ========== STAGE 3: GENERATION ==========
-        console.log('[AI Chat - RAG] Stage 3: Generating final answer...');
-        const generationSystemPrompt = ollamaConfig.chatSystemPromptTemplate.replace('${factsContext}', factsString);
-        
-        const apiMessages = [
-            { role: 'system', content: generationSystemPrompt },
-            ...messages.filter(m => m.role !== 'error').map(({ role, content }) => ({ role, content }))
-        ];
+    let body;
+    let endpoint = ollamaConfig.url;
 
-        let finalAiContent;
-        let endpointUrl, body;
-
-        if (ollamaConfig.apiFormat === 'openai') {
-            endpointUrl = `${ollamaConfig.url}/v1/chat/completions`;
-            body = JSON.stringify({ model: ollamaConfig.model, messages: apiMessages, stream: false });
-        } else {
-            endpointUrl = `${ollamaConfig.url}/api/chat`;
-            body = JSON.stringify({ model: ollamaConfig.model, messages: apiMessages, stream: false });
-        }
-      
-        const response = await fetch(endpointUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    if (ollamaConfig.apiFormat === 'openai') {
+        // OpenAI-compatible endpoint (like llama-cpp-python)
+        endpoint += '/v1/chat/completions';
+        body = JSON.stringify({
+            model: ollamaConfig.model,
+            messages: messages,
+            response_format: { type: 'json_object' }
+        });
+    } else {
+        // Default to Ollama's native API
+        endpoint += '/api/chat';
+        const lastMessage = messages.pop(); // Ollama puts the last prompt in a separate field
+        body = JSON.stringify({
+            model: ollamaConfig.model,
+            messages: messages,
+            prompt: lastMessage ? lastMessage.content : '',
+            format: 'json',
+            stream: false
+        });
+    }
+    
+    try {
+        const response = await fetchWithTimeout(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
+        }, 60000); // 60-second timeout for AI responses
 
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`AI Generation API error: ${response.statusText} - ${errorText}`);
+            const errorBody = await response.text();
+            throw new Error(`Ollama API request failed with status ${response.status}: ${errorBody}`);
         }
+        
         const data = await response.json();
         
+        let content;
         if (ollamaConfig.apiFormat === 'openai') {
-            finalAiContent = data.choices[0]?.message?.content;
+            content = data.choices?.[0]?.message?.content;
         } else {
-            finalAiContent = data.message?.content;
+            content = data.message?.content;
+        }
+        
+        if (!content) {
+            throw new Error('Received an empty or invalid response from the Ollama API.');
         }
 
-        if (!finalAiContent) {
-            throw new Error('AI returned a response in an unexpected format during generation.');
+        return content;
+    } catch (error) {
+        console.error('Error calling Ollama API:', error);
+        throw error;
+    }
+}
+
+
+// --- Context Building Helper for RAG ---
+/**
+ * Builds a smaller, relevant context object based on a list of fact paths.
+ * @param {string[]} factPaths - An array of dot-notation fact paths (e.g., ['ansible_distribution', 'services.nginx.version']).
+ * @param {object} allFacts - The complete facts object for all hosts.
+ * @returns {object} A new facts object containing only the data for the specified paths.
+ */
+function buildRelevantContext(factPaths, allFacts) {
+    const relevantContext = {};
+    if (!factPaths || factPaths.length === 0) {
+        return relevantContext;
+    }
+
+    for (const host in allFacts) {
+        relevantContext[host] = {};
+        const hostFacts = allFacts[host];
+
+        for (const path of factPaths) {
+            const keys = path.split('.');
+            let currentAllFactsLevel = hostFacts;
+            let currentRelevantContextLevel = relevantContext[host];
+            let found = true;
+
+            for (let i = 0; i < keys.length; i++) {
+                const key = keys[i];
+                if (currentAllFactsLevel && typeof currentAllFactsLevel === 'object' && key in currentAllFactsLevel) {
+                    currentAllFactsLevel = currentAllFactsLevel[key];
+                    if (i === keys.length - 1) { // Last key in path
+                        currentRelevantContextLevel[key] = currentAllFactsLevel;
+                    } else {
+                        if (!currentRelevantContextLevel[key]) {
+                            currentRelevantContextLevel[key] = {};
+                        }
+                        currentRelevantContextLevel = currentRelevantContextLevel[key];
+                    }
+                } else {
+                    found = false;
+                    break;
+                }
+            }
+        }
+         // If a host had no matching facts, remove it from the context to keep it clean.
+        if (Object.keys(relevantContext[host]).length === 0) {
+            delete relevantContext[host];
+        }
+    }
+
+    return relevantContext;
+}
+
+// --- API Endpoints ---
+
+// GET /api/status
+app.get('/api/status', (req, res) => {
+    const awxConfigured = !!(awxConfig.url && awxConfig.token);
+    const dbConfigured = !!(dbConfig.host && dbConfig.user && dbConfig.database);
+    res.json({
+        awx: { configured: awxConfigured },
+        db: { configured: dbConfigured },
+        ai: { enabled: ollamaConfig.useAiSearch }
+    });
+});
+
+// GET /api/facts
+app.get('/api/facts', async (req, res) => {
+    const { source } = req.query;
+
+    if (source === 'db') {
+        try {
+            const dbPool = getDbClient();
+            if (!dbPool) {
+                return res.status(500).json({ error: 'Database is not configured on the backend.' });
+            }
+            const result = await dbPool.query('SELECT hostname, data, modified_at FROM facts');
+            const allHostFacts = result.rows.reduce((acc, row) => {
+                acc[row.hostname] = {
+                    ...row.data,
+                    __awx_facts_modified_timestamp: row.modified_at,
+                };
+                return acc;
+            }, {});
+            res.json(allHostFacts);
+        } catch (error) {
+            console.error('Error fetching facts from database:', error);
+            res.status(500).json({ error: 'Failed to fetch facts from database.' });
+        }
+    } else if (source === 'awx') {
+        try {
+            console.log("Fetching hosts from AWX...");
+            const hosts = await fetchAwxApi('/api/v2/hosts/?page_size=100');
+            console.log(`Found ${hosts.length} hosts. Fetching facts for each...`);
+
+            // Use dynamic import for p-limit
+            const { default: pLimit } = await import('p-limit');
+            const limit = pLimit(awxConfig.concurrencyLimit);
+
+            const factPromises = hosts.map(host => limit(async () => {
+                const factsUrl = host.related.ansible_facts;
+                if (!factsUrl) {
+                    console.warn(`Host ${host.name} has no facts URL.`);
+                    return [host.name, {}];
+                }
+                try {
+                    const response = await fetchWithTimeout(`${awxConfig.url}${factsUrl}`, {
+                        headers: { 'Authorization': `Bearer ${awxConfig.token}` }
+                    });
+                    if (!response.ok) {
+                         // If facts are not found (404), treat it as empty facts, not an error.
+                        if (response.status === 404) {
+                            return [host.name, {}];
+                        }
+                        throw new Error(`Failed to fetch facts for ${host.name} with status ${response.status}`);
+                    }
+                    const factData = await response.json();
+                    
+                    // Fetch host modification time for consistency with DB source
+                    const hostDetailsResponse = await fetchWithTimeout(`${awxConfig.url}${host.url}`, {
+                        headers: { 'Authorization': `Bearer ${awxConfig.token}` }
+                    });
+                     if (!hostDetailsResponse.ok) {
+                        throw new Error(`Failed to fetch host details for ${host.name}`);
+                    }
+                    const hostDetails = await hostDetailsResponse.json();
+
+                    return [host.name, {
+                        ...factData,
+                        __awx_facts_modified_timestamp: hostDetails.modified,
+                    }];
+                } catch (factError) {
+                    console.error(`Error fetching facts for host ${host.name}:`, factError.message);
+                    return [host.name, {}]; // Return empty facts for this host on error
+                }
+            }));
+
+            const allHostFactEntries = await Promise.all(factPromises);
+            const allHostFacts = Object.fromEntries(allHostFactEntries);
+
+            res.json(allHostFacts);
+
+        } catch (error) {
+            console.error('Error fetching facts from AWX:', error);
+            res.status(500).json({ error: `Failed to fetch facts from AWX: ${error.message}` });
+        }
+    } else {
+        res.status(400).json({ error: 'Invalid or missing "source" query parameter. Use "db" or "awx".' });
+    }
+});
+
+// POST /api/ai-search
+app.post('/api/ai-search', async (req, res) => {
+    if (!ollamaConfig.useAiSearch) {
+        return res.status(403).json({ error: 'AI search is disabled on the server.' });
+    }
+    const { prompt, allFactPaths } = req.body;
+    if (!prompt || !allFactPaths || !Array.isArray(allFactPaths)) {
+        return res.status(400).json({ error: 'Missing "prompt" or "allFactPaths" in request body.' });
+    }
+
+    try {
+        const systemPrompt = ollamaConfig.systemPromptTemplate.replace(
+            '${allFactPaths}',
+            allFactPaths.join(', ')
+        );
+        const userPromptContent = ollamaConfig.userPromptTemplate.replace('${prompt}', prompt);
+
+        const aiResponse = await callOllamaApi(systemPrompt, [{ role: 'user', content: userPromptContent }]);
+        
+        try {
+            // The AI should return a JSON string, so we parse it.
+            const filters = JSON.parse(aiResponse);
+            if (!Array.isArray(filters) || !filters.every(item => typeof item === 'string')) {
+                throw new Error('AI response is not a valid JSON array of strings.');
+            }
+            res.json(filters);
+        } catch (parseError) {
+            console.error('Failed to parse AI response as JSON:', parseError);
+            console.error('Raw AI response:', aiResponse);
+            res.status(500).json({ error: 'AI returned an invalid response format. Could not parse filters.' });
         }
 
-        console.log('[AI Chat] Raw final response from model:', finalAiContent);
-        res.json({
-            response: finalAiContent.trim(),
-            retrievedContext: contextForGeneration,
-        });
-
-    } catch (err) {
-        console.error(`[AI Chat] Error during RAG process:`, err);
-        res.status(500).json({ error: err.message || 'Failed to get a response from the AI model.' });
+    } catch (error) {
+        console.error('Error during AI search:', error);
+        res.status(500).json({ error: `AI search failed: ${error.message}` });
     }
 });
 
 
-// Start the server
-if (sslConfig.keyPath && sslConfig.certPath) {
+// POST /api/ai-chat
+app.post('/api/ai-chat', async (req, res) => {
+    if (!ollamaConfig.useAiSearch) {
+        return res.status(403).json({ error: 'AI chat is disabled on the server.' });
+    }
+    const { messages, factsContext, allFactPaths } = req.body;
+    if (!messages || !Array.isArray(messages) || !factsContext || !allFactPaths) {
+        return res.status(400).json({ error: 'Missing required fields for AI chat.' });
+    }
+
     try {
-        const options = {
-            key: fs.readFileSync(sslConfig.keyPath),
-            cert: fs.readFileSync(sslConfig.certPath),
-        };
-        if (sslConfig.caPath) {
-            options.ca = fs.readFileSync(sslConfig.caPath);
+        const lastUserMessage = messages[messages.length - 1]?.content;
+        if (!lastUserMessage) {
+            return res.status(400).json({ error: "Cannot process empty user message." });
         }
-        https.createServer(options, app).listen(port, () => {
-            console.log(`Backend server listening securely at https://localhost:${port}`);
-        });
-    } catch (err) {
-        console.error("Error setting up HTTPS server. Please check your SSL configuration and file paths.", err);
-        console.log("Falling back to HTTP.");
-        app.listen(port, () => {
-            console.log(`Backend server listening at http://localhost:${port}`);
+        
+        // --- RAG Stage 1: Retrieval ---
+        console.log("AI Chat - Stage 1: Retrieving relevant fact paths...");
+        const retrievalSystemPrompt = ollamaConfig.retrievalSystemPromptTemplate.replace('${allFactPaths}', allFactPaths.join('\n'));
+        const retrievalResponse = await callOllamaApi(retrievalSystemPrompt, [{ role: 'user', content: lastUserMessage }]);
+        let relevantFactPaths = [];
+        try {
+            relevantFactPaths = JSON.parse(retrievalResponse);
+             console.log("AI Chat - Retrieved paths:", relevantFactPaths);
+        } catch (e) {
+            console.warn("AI Chat - Could not parse retrieval response, defaulting to no specific paths. Raw response:", retrievalResponse);
+        }
+        
+        // --- RAG Stage 2: Generation ---
+        console.log("AI Chat - Stage 2: Building context and generating response...");
+        let retrievedContext = buildRelevantContext(relevantFactPaths, factsContext);
+        
+        // **CRITICAL FALLBACK**: If RAG retrieval yields no context (e.g., bad paths or no matches),
+        // default to using the full context to prevent the AI from getting an empty input.
+        if (Object.keys(retrievedContext).length === 0) {
+            console.warn("AI Chat - Retrieved context was empty. Falling back to the full facts context.");
+            retrievedContext = factsContext;
+        }
+
+        const chatSystemPrompt = ollamaConfig.chatSystemPromptTemplate.replace(
+            '${factsContext}',
+            JSON.stringify(retrievedContext, null, 2)
+        );
+
+        // For the final generation, we send the full conversation history.
+        // The last user message is already included in the `messages` array.
+        const chatResponse = await callOllamaApi(chatSystemPrompt, messages.map(({role, content}) => ({role, content})));
+        
+        res.json({ response: chatResponse, retrievedContext: retrievedContext });
+
+    } catch (error) {
+        console.error('Error during AI chat:', error);
+        res.status(500).json({ error: `AI chat failed: ${error.message}` });
+    }
+});
+
+
+// --- Server Initialization ---
+const startServer = () => {
+    let server;
+    if (sslConfig.keyPath && sslConfig.certPath) {
+        try {
+            const options = {
+                key: fs.readFileSync(sslConfig.keyPath),
+                cert: fs.readFileSync(sslConfig.certPath),
+                ...(sslConfig.caPath && { ca: fs.readFileSync(sslConfig.caPath) }),
+            };
+            server = https.createServer(options, app);
+            server.listen(PORT, () => {
+                console.log(`Backend server listening at https://localhost:${PORT}`);
+            });
+        } catch (error) {
+            console.error('Could not start HTTPS server. Check SSL certificate paths.');
+            console.error(error);
+            process.exit(1);
+        }
+    } else {
+        console.warn("SSL certs not configured. Starting in HTTP mode.");
+        server = http.createServer(app);
+        server.listen(PORT, () => {
+            console.log(`Backend server listening at http://localhost:${PORT}`);
         });
     }
-} else {
-    app.listen(port, () => {
-        console.log(`Backend server listening at http://localhost:${port}`);
+
+    server.on('error', (error) => {
+        console.error('Server failed to start:', error);
+        process.exit(1);
     });
-}
+};
+
+startServer();
