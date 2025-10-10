@@ -9,11 +9,12 @@ interface ChatWindowProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isSending: boolean;
-  context: AllHostFacts;
+  fullContext: AllHostFacts;
+  retrievedContext: AllHostFacts | null;
 }
 
 // A modal component to display the raw JSON context sent to the AI.
-const ContextPreviewModal: React.FC<{ isVisible: boolean; onClose: () => void; context: AllHostFacts }> = ({ isVisible, onClose, context }) => {
+const ContextPreviewModal: React.FC<{ isVisible: boolean; onClose: () => void; context: AllHostFacts; title: string; }> = ({ isVisible, onClose, context, title }) => {
   if (!isVisible) {
     return null;
   }
@@ -41,7 +42,7 @@ const ContextPreviewModal: React.FC<{ isVisible: boolean; onClose: () => void; c
         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside the modal
       >
         <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
-          <h4 className="font-semibold text-slate-800 dark:text-zinc-100">AI Chat Context</h4>
+          <h4 className="font-semibold text-slate-800 dark:text-zinc-100">{title}</h4>
           <button 
             onClick={onClose} 
             className="p-1 rounded-full text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
@@ -89,9 +90,10 @@ const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
 };
 
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, context }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, fullContext, retrievedContext }) => {
   const [input, setInput] = useState('');
-  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [isFullPreviewVisible, setIsFullPreviewVisible] = useState(false);
+  const [isRetrievedPreviewVisible, setIsRetrievedPreviewVisible] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -136,13 +138,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
             <h3 className="font-semibold text-lg bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
                 AI Assistant
             </h3>
-            <button
-                onClick={() => setIsPreviewVisible(true)}
-                className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors focus:outline-none focus:underline"
-                title="View the data context being sent to the AI"
-            >
-                Preview Context
-            </button>
+             <div className="flex items-center gap-3">
+               <button
+                  onClick={() => setIsFullPreviewVisible(true)}
+                  className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors focus:outline-none focus:underline"
+                  title="View the full data context available to the AI"
+              >
+                  Preview Full Context
+              </button>
+               <button
+                  onClick={() => setIsRetrievedPreviewVisible(true)}
+                  className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors focus:outline-none focus:underline disabled:text-slate-400 dark:disabled:text-zinc-600 disabled:cursor-not-allowed disabled:no-underline"
+                  title="View the retrieved (narrowed) context used for the last response"
+                  disabled={!retrievedContext || Object.keys(retrievedContext).length === 0}
+              >
+                  Preview Retrieved Context
+              </button>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -205,9 +217,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
         </div>
       </div>
       <ContextPreviewModal
-        isVisible={isPreviewVisible}
-        onClose={() => setIsPreviewVisible(false)}
-        context={context}
+        isVisible={isFullPreviewVisible}
+        onClose={() => setIsFullPreviewVisible(false)}
+        context={fullContext}
+        title="Full AI Chat Context"
+      />
+       <ContextPreviewModal
+        isVisible={isRetrievedPreviewVisible}
+        onClose={() => setIsRetrievedPreviewVisible(false)}
+        context={retrievedContext || {}}
+        title="Retrieved AI Chat Context"
       />
     </>
   );

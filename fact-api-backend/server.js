@@ -643,7 +643,10 @@ app.post('/api/ai-chat', async (req, res) => {
         }
 
         console.log('[AI Chat] Raw final response from model:', finalAiContent);
-        res.json({ response: finalAiContent.trim() });
+        res.json({
+            response: finalAiContent.trim(),
+            retrievedContext: contextForGeneration,
+        });
 
     } catch (err) {
         console.error(`[AI Chat] Error during RAG process:`, err);

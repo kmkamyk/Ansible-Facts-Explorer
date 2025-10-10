@@ -233,6 +233,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [retrievedChatContext, setRetrievedChatContext] = useState<AllHostFacts | null>(null);
 
 
   // Fetch service status on initial load
@@ -316,6 +317,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setScrollProgress(0);
     // Reset chat on new data load
     setChatMessages([]);
+    setRetrievedChatContext(null);
 
     try {
         let data: AllHostFacts;
@@ -395,8 +397,9 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     setIsChatLoading(true);
 
     try {
-        const aiResponse = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
+        const { response: aiResponse, retrievedContext } = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
         setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+        setRetrievedChatContext(retrievedContext);
     } catch (e: any) {
         setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);
         console.error(e);
@@ -892,7 +895,8 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessage}
         isSending={isChatLoading}
-        context={rawFacts}
+        fullContext={rawFacts}
+        retrievedContext={retrievedChatContext}
       />
     </div>
   );
