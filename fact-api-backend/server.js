@@ -360,12 +360,29 @@ app.post('/api/ai-chat', async (req, res) => {
         console.log("AI Chat - Stage 1: Retrieving relevant fact paths...");
         const retrievalSystemPrompt = ollamaConfig.retrievalSystemPromptTemplate.replace('${allFactPaths}', allFactPaths.join('\n'));
         const retrievalResponse = await callOllamaApi(retrievalSystemPrompt, [{ role: 'user', content: lastUserMessage }]);
+        
         let relevantFactPaths = [];
         try {
-            relevantFactPaths = JSON.parse(retrievalResponse);
-             console.log("AI Chat - Retrieved paths:", relevantFactPaths);
+            const parsedResponse = JSON.parse(retrievalResponse);
+            // Defensively check if the response is an array, as LLMs can sometimes return objects.
+            if (Array.isArray(parsedResponse)) {
+                relevantFactPaths = parsedResponse;
+            } else if (typeof parsedResponse === 'object' && parsedResponse !== null) {
+                // Attempt to find an array within a single-keyed object, a common LLM mistake
+                const keys = Object.keys(parsedResponse);
+                if (keys.length === 1 && Array.isArray(parsedResponse[keys[0]])) {
+                    console.warn(`AI Chat - AI returned a wrapped object, extracting array from key: ${keys[0]}`);
+                    relevantFactPaths = parsedResponse[keys[0]];
+                } else {
+                    throw new Error('Parsed JSON is not an array and no single-key array was found.');
+                }
+            } else {
+                 throw new Error('Parsed JSON is not an array or a recognized object structure.');
+            }
+            console.log("AI Chat - Retrieved paths:", relevantFactPaths);
         } catch (e) {
-            console.warn("AI Chat - Could not parse retrieval response, defaulting to no specific paths. Raw response:", retrievalResponse);
+            console.warn(`AI Chat - Could not parse retrieval response as a valid array. Error: ${e.message}. Raw response:`, retrievalResponse);
+            relevantFactPaths = []; // Ensure it's an empty array on failure
         }
         
         // --- RAG Stage 2: Generation ---
