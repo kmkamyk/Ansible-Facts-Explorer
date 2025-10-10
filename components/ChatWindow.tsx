@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage } from '../types';
+import { ChatMessage, AllHostFacts } from '../types';
 import { SendIcon, XSmallIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
@@ -9,7 +9,59 @@ interface ChatWindowProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isSending: boolean;
+  context: AllHostFacts;
 }
+
+// A modal component to display the raw JSON context sent to the AI.
+const ContextPreviewModal: React.FC<{ isVisible: boolean; onClose: () => void; context: AllHostFacts }> = ({ isVisible, onClose, context }) => {
+  if (!isVisible) {
+    return null;
+  }
+
+  // Effect to handle Escape key press for closing the modal
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div 
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-[fade-in_0.2s_ease-out]"
+      onClick={onClose} // Close on backdrop click
+    >
+      <div 
+        className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col border border-slate-200 dark:border-zinc-700 animate-[slide-in-up_0.3s_ease-out]"
+        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside the modal
+      >
+        <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
+          <h4 className="font-semibold text-slate-800 dark:text-zinc-100">AI Chat Context</h4>
+          <button 
+            onClick={onClose} 
+            className="p-1 rounded-full text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+            title="Close context view"
+          >
+            <XSmallIcon />
+          </button>
+        </header>
+        <div className="flex-1 p-2 sm:p-4 overflow-auto">
+          <pre className="text-xs font-mono bg-slate-50 dark:bg-zinc-950/50 p-4 rounded-md text-slate-600 dark:text-zinc-400">
+            <code>{JSON.stringify(context, null, 2)}</code>
+          </pre>
+        </div>
+        <footer className="p-3 text-center text-xs text-slate-500 dark:text-zinc-500 border-t border-slate-200 dark:border-zinc-800">
+            This is the raw JSON data provided to the AI to answer your questions.
+        </footer>
+      </div>
+    </div>
+  );
+};
 
 // A simple component to render text with basic Markdown (bold and lists).
 // This avoids adding a full Markdown library dependency.
@@ -37,8 +89,9 @@ const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
 };
 
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, onSendMessage, isSending, context }) => {
   const [input, setInput] = useState('');
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -79,9 +132,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
     <>
       <div className="fixed bottom-6 right-6 z-50 w-[90vw] max-w-md h-[70vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-zinc-700/50 animate-[slide-in-up_0.3s_ease-out]">
         <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
-          <h3 className="font-semibold text-lg bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
-              AI Assistant
-          </h3>
+          <div className="flex items-center gap-4">
+            <h3 className="font-semibold text-lg bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent dark:from-violet-500 dark:to-fuchsia-400">
+                AI Assistant
+            </h3>
+            <button
+                onClick={() => setIsPreviewVisible(true)}
+                className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors focus:outline-none focus:underline"
+                title="View the data context being sent to the AI"
+            >
+                Preview Context
+            </button>
+          </div>
           <button
             onClick={onClose}
             className="p-1 rounded-full text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
@@ -142,6 +204,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
           </form>
         </div>
       </div>
+      <ContextPreviewModal
+        isVisible={isPreviewVisible}
+        onClose={() => setIsPreviewVisible(false)}
+        context={context}
+      />
     </>
   );
 };

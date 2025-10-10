@@ -593,8 +593,16 @@ app.post('/api/ai-chat', async (req, res) => {
         console.log(`[AI Chat - RAG] Found ${relevantPaths.length} relevant paths:`, relevantPaths);
 
         // ========== STAGE 2: CONTEXT BUILDING ==========
-        const relevantContext = buildRelevantContext(factsContext, relevantPaths);
-        const factsString = JSON.stringify(relevantContext, null, 2);
+        // If the retrieval step fails or finds no paths, default to using the full context.
+        // This makes the chat more robust against retrieval failures or general questions.
+        let contextForGeneration = factsContext; 
+        if (relevantPaths && relevantPaths.length > 0) {
+            console.log('[AI Chat - RAG] Building a focused context with relevant paths.');
+            contextForGeneration = buildRelevantContext(factsContext, relevantPaths);
+        } else {
+            console.log('[AI Chat - RAG] No specific paths retrieved. Using full facts context for generation.');
+        }
+        const factsString = JSON.stringify(contextForGeneration, null, 2);
 
         // ========== STAGE 3: GENERATION ==========
         console.log('[AI Chat - RAG] Stage 3: Generating final answer...');

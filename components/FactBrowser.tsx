@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../services/apiService';
@@ -893,6 +892,7 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessage}
         isSending={isChatLoading}
+        context={rawFacts}
       />
     </div>
   );
