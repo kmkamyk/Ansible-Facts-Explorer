@@ -395,10 +395,11 @@ const FactBrowser: React.FC<FactBrowserProps> = () => {
     const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }];
     setChatMessages(newMessages);
     setIsChatLoading(true);
+    setRetrievedChatContext(null); // Reset context for the new turn
 
     try {
-        const { response: aiResponse, retrievedContext } = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+        const { response: aiResponse, retrievedContext, retrievalDidFail } = await apiService.performAiChat(newMessages, factsForChatContext, allFactPaths);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse, retrievalFailed: retrievalDidFail }]);
         setRetrievedChatContext(retrievedContext);
     } catch (e: any) {
         setChatMessages(prev => [...prev, { role: 'error', content: e.message || 'An unknown error occurred.' }]);

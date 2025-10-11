@@ -387,6 +387,8 @@ app.post('/api/ai-chat', async (req, res) => {
             relevantFactPaths = []; // Ensure it's an empty array on failure
         }
         
+        let retrievalDidFail = false;
+
         // --- RAG Stage 2: Generation ---
         console.log("AI Chat - Stage 2: Building context and generating response...");
         let retrievedContext = buildRelevantContext(relevantFactPaths, factsContext);
@@ -396,6 +398,7 @@ app.post('/api/ai-chat', async (req, res) => {
         if (Object.keys(retrievedContext).length === 0) {
             console.warn("AI Chat - Retrieved context was empty. Falling back to the full facts context.");
             retrievedContext = factsContext;
+            retrievalDidFail = true;
         }
 
         const chatSystemPrompt = ollamaConfig.chatSystemPromptTemplate.replace(
@@ -407,7 +410,7 @@ app.post('/api/ai-chat', async (req, res) => {
         // The last user message is already included in the `messages` array.
         const chatResponse = await callOllamaApi(chatSystemPrompt, messages.map(({role, content}) => ({role, content})));
         
-        res.json({ response: chatResponse, retrievedContext: retrievedContext });
+        res.json({ response: chatResponse, retrievedContext: retrievedContext, retrievalDidFail: retrievalDidFail });
 
     } catch (error) {
         console.error('Error during AI chat:', error);

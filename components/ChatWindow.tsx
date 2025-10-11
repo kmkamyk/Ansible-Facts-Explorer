@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AllHostFacts } from '../types';
-import { SendIcon, XSmallIcon } from './icons/Icons';
+import { SendIcon, XSmallIcon, WarningIcon } from './icons/Icons';
 import Spinner from './Spinner';
 
 interface ChatWindowProps {
@@ -167,17 +167,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, onClose, messages, o
 
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
           {messages.map((msg, index) => (
-            <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-              {msg.role !== 'user' && <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex-shrink-0" />}
-              <div
-                className={`max-w-[80%] rounded-2xl p-3 text-sm whitespace-pre-wrap ${
-                  msg.role === 'user' ? 'bg-violet-600 dark:bg-violet-500 text-white rounded-br-none' :
-                  msg.role === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200 rounded-bl-none' :
-                  'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-100 rounded-bl-none'
-                }`}
-              >
-                <SimpleMarkdown text={msg.content} />
-              </div>
+            <div key={index} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className={`flex items-start gap-3 w-full ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                    {msg.role !== 'user' && <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex-shrink-0" />}
+                    <div
+                        className={`max-w-[80%] rounded-2xl p-3 text-sm whitespace-pre-wrap ${
+                        msg.role === 'user' ? 'bg-violet-600 dark:bg-violet-500 text-white rounded-br-none' :
+                        msg.role === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200 rounded-bl-none' :
+                        'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-100 rounded-bl-none'
+                        }`}
+                    >
+                        <SimpleMarkdown text={msg.content} />
+                    </div>
+                </div>
+                {msg.role === 'assistant' && msg.retrievalFailed && (
+                    <div 
+                        className="flex items-center gap-1.5 mt-1.5 ml-11 text-xs text-amber-600 dark:text-amber-500"
+                        title="The AI's attempt to find specific facts for your question was unsuccessful. It used the entire dataset to generate this answer, which may be less precise."
+                    >
+                        <WarningIcon />
+                        <span>Using full context</span>
+                    </div>
+                )}
             </div>
           ))}
           {isSending && (

@@ -37,4 +37,5 @@ export interface SortConfig {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'error';
   content: string;
+  retrievalFailed?: boolean;
 }

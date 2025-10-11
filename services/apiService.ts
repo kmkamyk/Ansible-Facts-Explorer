@@ -108,7 +108,7 @@ export const apiService = {
     }
   },
 
-  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<{ response: string; retrievedContext: AllHostFacts; }> => {
+  performAiChat: async (messages: ChatMessage[], factsContext: AllHostFacts, allFactPaths: string[]): Promise<{ response: string; retrievedContext: AllHostFacts; retrievalDidFail: boolean; }> => {
     const chatUrl = `${API_BASE_URL}/ai-chat`;
     console.log('Performing AI chat...');
     try {
